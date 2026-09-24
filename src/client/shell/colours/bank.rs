@@ -2,8 +2,6 @@ use super::{catalogue::THEMES, math::*};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-pub(super) const SIDEBAR: [Rgb; 2] = [Rgb([28, 28, 28]), Rgb([238, 238, 238])];
-
 pub(super) const LIGHT: Rgb = Rgb([214, 217, 224]);
 pub(super) const INK: Rgb = Rgb([16, 20, 27]);
 

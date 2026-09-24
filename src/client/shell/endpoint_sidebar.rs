@@ -20,7 +20,7 @@ pub(super) fn render_collapsed(
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
-    super::render::render_sidebar_background(buffer, area, palette);
+    super::render::render_sidebar_background(buffer, area, palette, config.workspace_colours);
     let (workspace_area, divider_y, detail_area) = super::sidebar::collapsed_sidebar_sections(area);
     let mut total_rows = 0usize;
     let mut selected_row = None;
@@ -151,6 +151,9 @@ pub(super) fn render_collapsed(
                 );
             }
             let stale = endpoint.status != ClientEndpointStatus::Online;
+            let family = state
+                .colours
+                .and_then(|c| c.workspace_style(&endpoint.endpoint_id, &workspace.workspace_id));
             let number = format!(" {}", workspace.number);
             let number_width = super::render::display_width(&number).min(rect.width);
             let dim = if stale {
@@ -165,11 +168,15 @@ pub(super) fn render_collapsed(
                 number_width,
                 &number,
                 Style::default()
-                    .fg(if focused && !stale {
-                        palette.text
-                    } else {
-                        palette.overlay0
-                    })
+                    .fg(
+                        if !stale && state.selected_workspace_id.is_none() && family.is_some() {
+                            family.map_or(palette.overlay0, |s| s.foreground(0))
+                        } else if focused && !stale {
+                            palette.text
+                        } else {
+                            palette.overlay0
+                        },
+                    )
                     .add_modifier(dim),
             );
             put_text(
@@ -243,7 +250,7 @@ pub(super) fn render_expanded(
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
-    super::render::render_sidebar_background(buffer, area, palette);
+    super::render::render_sidebar_background(buffer, area, palette, config.workspace_colours);
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -479,7 +486,12 @@ pub(super) fn render_expanded(
                     selected,
                     state.selected_workspace_id.is_some(),
                     false,
-                    palette,
+                    super::sidebar::WorkspaceRowStyle {
+                        palette,
+                        family: state.colours.and_then(|colours| {
+                            colours.workspace_style(&endpoint.endpoint_id, &workspace.workspace_id)
+                        }),
+                    },
                 );
                 if endpoint.status != ClientEndpointStatus::Online {
                     buffer.set_style(
@@ -562,6 +574,7 @@ pub(super) fn render_expanded(
         config,
         state.agent_scroll,
         hits,
+        state.colours,
     );
     hits.sidebar_toggle = Rect::new(
         area.right().saturating_sub(2),

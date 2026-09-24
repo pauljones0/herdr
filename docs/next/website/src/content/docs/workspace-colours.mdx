@@ -3,12 +3,33 @@ title: Workspace colour families
 description: Generated workspace themes with coordinated local tabs in this custom build.
 ---
 
-Enable generated workspace colours in the native client:
+Enable generated workspace colours in **Settings → theme**: select
+**workspace colours: mixed palettes** or **workspace colours: follow theme**, then
+**apply**. Select **workspace colours: off** and
+apply to restore ordinary styling. Selecting a choice and closing without applying
+leaves the option unchanged. The base-theme picker remains in the same tab.
+
+Alternatively, set the option in your config:
 
 ```toml
 [theme]
 workspace_colours = true
+workspace_colour_palette = "mixed" # or "theme"
 ```
+
+**Mixed palettes** retains the original family styling. **Follow theme** adapts
+label brightness and saturation to the resolved base theme, including custom RGB
+palette overrides, while preserving workspace and tab hues. It borrows tonal
+character rather than copying a theme's exact accent colours. The ANSI `terminal`
+theme keeps the mixed styling when no fixed RGB palette is available. Switching
+modes does not regenerate saved assignments. Existing enabled configurations keep
+Mixed palettes unless you explicitly change modes.
+
+Family styles supply defaults to Herdr's existing sidebar token renderer. Explicit
+token foreground/bold/dim settings, status colours, and navigation/drag highlights
+keep precedence. Terminal font selection, glyphs, text attributes, hyperlinks, and
+explicit application foreground/background colours remain owned by the existing
+terminal renderer.
 
 This custom build chooses from 24 named art directions, including Forest, Pastel / kawaii,
 Glacier, Sakura, Cosmic, and Pomegranate. Each workspace receives a generated variant;

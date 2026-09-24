@@ -129,8 +129,51 @@ pub(super) fn render_settings_overlay(
     let mut choice_hits = Vec::new();
     match settings.section {
         ClientSettingsSection::Theme => {
-            let visible = usize::from(content.height);
-            let scroll = settings.selected.saturating_sub(visible.saturating_sub(1));
+            let offset = super::super::settings::THEME_CHOICE_OFFSET;
+            for (index, label) in [
+                "workspace colours: off",
+                "workspace colours: follow theme",
+                "workspace colours: mixed palettes",
+            ]
+            .iter()
+            .enumerate()
+            .take(usize::from(content.height))
+            {
+                let rect = Rect::new(content.x, content.y + index as u16, content.width, 1);
+                draw_choice(
+                    buffer,
+                    rect,
+                    label,
+                    index == settings.selected,
+                    index
+                        == if !settings.original_workspace_colours {
+                            0
+                        } else if settings.original_workspace_colour_palette
+                            == crate::config::WorkspaceColourPalette::Theme
+                        {
+                            1
+                        } else {
+                            2
+                        },
+                    palette,
+                );
+                choice_hits.push((rect, index));
+            }
+            if content.height > 4 {
+                put_text(
+                    buffer,
+                    content.x,
+                    content.y + 4,
+                    content.width,
+                    " base theme",
+                    Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+                );
+            }
+            let visible = usize::from(content.height.saturating_sub(5));
+            let scroll = settings
+                .selected
+                .saturating_sub(offset)
+                .saturating_sub(visible.saturating_sub(1));
             for (visible_index, (index, name)) in crate::config::THEME_NAMES
                 .iter()
                 .enumerate()
@@ -140,7 +183,7 @@ pub(super) fn render_settings_overlay(
             {
                 let rect = Rect::new(
                     content.x,
-                    content.y + visible_index as u16,
+                    content.y + 5 + visible_index as u16,
                     content.width,
                     1,
                 );
@@ -148,14 +191,14 @@ pub(super) fn render_settings_overlay(
                     buffer,
                     rect,
                     name,
-                    index == settings.selected,
+                    index + offset == settings.selected,
                     super::super::settings::normalized_theme_name(name)
                         == super::super::settings::normalized_theme_name(
                             &settings.original_theme_name,
                         ),
                     palette,
                 );
-                choice_hits.push((rect, index));
+                choice_hits.push((rect, index + offset));
             }
         }
         ClientSettingsSection::Indicators => {

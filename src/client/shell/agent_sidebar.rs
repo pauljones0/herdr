@@ -12,6 +12,7 @@ use super::*;
 
 pub(super) struct AgentRow {
     pub(super) pane_id: String,
+    pub(super) family: Option<colours::SidebarStyle>,
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
@@ -56,6 +57,8 @@ pub(super) fn render_agent_panel(
     config: &ClientShellConfig,
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
+    colours: Option<&colours::Colours>,
+    endpoint: &ClientEndpointId,
 ) {
     if !render_agent_panel_header(
         buffer,
@@ -67,7 +70,7 @@ pub(super) fn render_agent_panel(
         return;
     }
 
-    let rows = agent_rows(snapshot, config, None);
+    let rows = agent_rows(snapshot, config, None, colours.map(|c| (c, endpoint)));
     render_agent_list(
         buffer,
         area,
@@ -82,7 +85,7 @@ pub(super) fn render_agent_panel(
         |row| row.rows.len(),
         |buffer, rect, row, hits| {
             hits.agents.push((rect, row.pane_id.clone()));
-            render_agent_row(buffer, rect, row, config);
+            render_agent_row(buffer, rect, row, config, row.family);
         },
     );
 }
@@ -238,10 +241,11 @@ pub(super) fn agent_rows(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
     machine: Option<&str>,
+    colours: Option<(&colours::Colours, &ClientEndpointId)>,
 ) -> Vec<AgentRow> {
     ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
         .into_iter()
-        .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, machine))
+        .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, machine, colours))
         .collect()
 }
 
@@ -250,6 +254,7 @@ pub(super) fn agent_row(
     pane_id: &str,
     config: &ClientShellConfig,
     machine: Option<&str>,
+    colours: Option<(&colours::Colours, &ClientEndpointId)>,
 ) -> Option<AgentRow> {
     let agent = snapshot
         .agents
@@ -312,6 +317,8 @@ pub(super) fn agent_row(
     );
     Some(AgentRow {
         pane_id: agent.pane_id.clone(),
+        family: colours
+            .and_then(|(c, endpoint)| c.agent_style(endpoint, &agent.workspace_id, &agent.tab_id)),
         status: agent.agent_status,
         focused: agent.focused,
         rows,
@@ -323,9 +330,12 @@ pub(super) fn render_agent_row(
     rect: Rect,
     row: &AgentRow,
     config: &ClientShellConfig,
+    family: Option<colours::SidebarStyle>,
 ) {
     let palette = &config.palette;
-    let row_style = if row.focused {
+    let row_style = if let Some(family) = family {
+        Style::default().bg(family.background(row.focused))
+    } else if row.focused {
         Style::default().bg(palette.active_row_bg)
     } else {
         Style::default()
@@ -356,6 +366,8 @@ pub(super) fn render_agent_row(
     for (index, tokens) in rows.iter().take(rect.height as usize).enumerate() {
         let indent = if index == 0 { 1 } else { 3 };
         let mut spans = vec![ratatui::text::Span::raw(" ".repeat(indent))];
+        let name_style = family.map_or(name_style, |style| name_style.fg(style.foreground(index)));
+        let secondary = family.map_or(secondary, |style| secondary.fg(style.foreground(index)));
         spans.extend(crate::ui::resolved_token_spans(
             tokens,
             icon,

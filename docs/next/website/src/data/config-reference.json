@@ -41,6 +41,16 @@
           "description": "Generate named workspace colour families and related tab colours in the native client."
         },
         {
+          "key": "theme.workspace_colour_palette",
+          "type": "string",
+          "default": "\"mixed\"",
+          "description": "Workspace colour source: mixed preserves catalogue styling; theme adapts its tones to the resolved base theme. Requires workspace_colours.",
+          "values": [
+            "theme",
+            "mixed"
+          ]
+        },
+        {
           "key": "theme.name",
           "type": "string",
           "default": "\"catppuccin\"",

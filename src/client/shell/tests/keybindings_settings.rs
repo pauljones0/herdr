@@ -1,6 +1,60 @@
 use super::*;
 
 #[test]
+fn workspace_colours_settings_use_theme_selection_and_cancel_flow() {
+    for enabled in [false, true] {
+        let mut config = Config::default();
+        config.theme.workspace_colours = enabled;
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+        state.set_snapshot(Box::new(snapshot()));
+        state.set_pane_surface(surface());
+        state.open_settings_overlay();
+        let original_theme = state.config.theme_name.clone();
+        let original_palette = state.config.palette.clone();
+        state.handle_input_bytes(b"j");
+        assert_ne!(state.config.theme_name, original_theme);
+        state.compose(106, 30).expect("settings frame");
+        let choice = state
+            .hits
+            .settings_choices
+            .iter()
+            .find(|(_, index)| *index == usize::from(!enabled))
+            .expect("workspace colour choice")
+            .0;
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: choice.x + 1,
+            row: choice.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+        assert_eq!(state.config.theme_name, original_theme);
+        assert_eq!(state.config.palette, original_palette);
+        assert_eq!(
+            state.config.workspace_colours, enabled,
+            "selection waits for Apply"
+        );
+        assert!(matches!(
+            state.overlay,
+            Some(ClientShellOverlay::Settings(_))
+        ));
+        state.handle_input_bytes(b"\x1b");
+        assert!(state.overlay.is_none());
+        assert_eq!(state.config.workspace_colours, enabled);
+
+        state.open_settings_overlay();
+        state.move_settings_selection(10_000);
+        state.compose(106, 30).expect("scrolled theme list");
+        assert!(state.hits.settings_choices.iter().any(|(_, index)| *index
+            == crate::config::THEME_NAMES.len() + super::super::settings::THEME_CHOICE_OFFSET - 1));
+        assert!(state
+            .hits
+            .settings_choices
+            .iter()
+            .any(|(_, index)| *index == 0));
+    }
+}
+
+#[test]
 fn shell_new_controls_use_the_same_client_action_routes_as_keybinds() {
     let mut config = Config::default();
     config.ui.prompt_new_workspace_name = false;

@@ -77,6 +77,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 
 # Generated workspace families and coordinated local tabs (client presentation).
 # workspace_colours = false
+# Workspace palette source: "mixed" (original families) or "theme" (theme-adapted).
+# workspace_colour_palette = "mixed"
 
 # Follow host terminal light/dark appearance and switch Herdr UI themes.
 # Existing manual behavior is unchanged unless this is true.

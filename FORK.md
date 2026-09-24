@@ -31,11 +31,14 @@ cd herdr
 just build
 ```
 
-Add this setting to your Herdr configuration:
+Open **Settings → theme**, select **workspace colours: mixed palettes** or **workspace colours: follow theme**, and choose **apply**.
+Select **workspace colours: off** and apply to restore ordinary styling.
+You can also set the option in your Herdr configuration:
 
 ```toml
 [theme]
 workspace_colours = true
+workspace_colour_palette = "mixed" # or "theme"
 ```
 
 Run `./target/release/herdr` from this checkout. To isolate evaluation from an existing session, use a new session name and clear inherited socket overrides:

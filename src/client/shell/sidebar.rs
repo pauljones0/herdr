@@ -51,11 +51,12 @@ pub(crate) fn render_collapsed_sidebar(
     config: &ClientShellConfig,
     selected_workspace_id: Option<&str>,
     hits: &mut ShellHitMap,
+    colours: Option<(&colours::Colours, &ClientEndpointId)>,
 ) {
     let palette = &config.palette;
     let selection_background = workspace_selection_background(palette);
     let active_background = workspace_active_background(palette, selected_workspace_id.is_some());
-    render_sidebar_background(buffer, area, palette);
+    render_sidebar_background(buffer, area, palette, config.workspace_colours);
     let (workspace_area, divider_y, detail_area) = collapsed_sidebar_sections(area);
     for (index, workspace) in snapshot
         .workspaces
@@ -75,7 +76,7 @@ pub(crate) fn render_collapsed_sidebar(
         } else if workspace.focused {
             buffer.set_style(rect, Style::default().bg(active_background));
         }
-        let number_style = if selected {
+        let mut number_style = if selected {
             Style::default()
                 .fg(palette.overlay1)
                 .bg(selection_background)
@@ -84,6 +85,13 @@ pub(crate) fn render_collapsed_sidebar(
         } else {
             Style::default().fg(palette.overlay0)
         };
+        if selected_workspace_id.is_none() {
+            if let Some(family) = colours
+                .and_then(|(c, endpoint)| c.workspace_style(endpoint, &workspace.workspace_id))
+            {
+                number_style = number_style.fg(family.foreground(0));
+            }
+        }
         put_text(
             buffer,
             rect.x,
@@ -205,7 +213,7 @@ pub(crate) fn render_sidebar(
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
-    render_sidebar_background(buffer, area, palette);
+    render_sidebar_background(buffer, area, palette, config.workspace_colours);
     hits.sidebar_divider = if area.is_empty() {
         Rect::default()
     } else {
@@ -332,7 +340,12 @@ pub(crate) fn render_sidebar(
             selected,
             state.selected_workspace_id.is_some(),
             dragged,
-            palette,
+            WorkspaceRowStyle {
+                palette,
+                family: state.colours.and_then(|colours| {
+                    colours.workspace_style(state.active_endpoint_id, &workspace.workspace_id)
+                }),
+            },
         );
         let group_toggle = render_parent_group_toggle(
             buffer,
@@ -437,6 +450,8 @@ pub(crate) fn render_sidebar(
         config,
         state.agent_scroll,
         hits,
+        state.colours,
+        state.active_endpoint_id,
     );
 
     hits.sidebar_toggle = Rect::new(
@@ -652,6 +667,11 @@ pub(in crate::client::shell) fn workspace_rows(
     )
 }
 
+pub(in crate::client::shell) struct WorkspaceRowStyle<'a> {
+    pub palette: &'a Palette,
+    pub family: Option<colours::SidebarStyle>,
+}
+
 pub(in crate::client::shell) fn render_workspace_rows(
     buffer: &mut Buffer,
     area: Rect,
@@ -663,8 +683,9 @@ pub(in crate::client::shell) fn render_workspace_rows(
     selected: bool,
     navigating: bool,
     dragged: bool,
-    palette: &Palette,
+    style: WorkspaceRowStyle<'_>,
 ) {
+    let WorkspaceRowStyle { palette, family } = style;
     for (row_index, row) in rows.iter().enumerate() {
         let y = area.y + row_index as u16;
         if y >= area.bottom() {
@@ -697,7 +718,7 @@ pub(in crate::client::shell) fn render_workspace_rows(
             x = x.saturating_add(3);
         }
         let highlighted = focused || dragged;
-        let workspace_style = Style::default()
+        let mut workspace_style = Style::default()
             .fg(if highlighted {
                 palette.text
             } else {
@@ -708,11 +729,18 @@ pub(in crate::client::shell) fn render_workspace_rows(
             } else {
                 Modifier::empty()
             });
-        let secondary_style = Style::default().fg(if focused {
+        let mut secondary_style = Style::default().fg(if focused {
             palette.mauve
         } else {
             palette.overlay0
         });
+        let mut custom_style = Style::default().fg(palette.overlay1);
+        if let Some(family) = family.filter(|_| !selected && !dragged && !navigating) {
+            let fg = family.foreground(row_index);
+            workspace_style = workspace_style.fg(fg);
+            secondary_style = secondary_style.fg(fg);
+            custom_style = custom_style.fg(fg);
+        }
         let spans = crate::ui::resolved_token_spans(
             row,
             (
@@ -722,7 +750,7 @@ pub(in crate::client::shell) fn render_workspace_rows(
             Style::default().fg(status_color(status, palette)),
             workspace_style,
             secondary_style,
-            Style::default().fg(palette.overlay1),
+            custom_style,
             palette,
             area.right().saturating_sub(2).saturating_sub(x) as usize,
         );
@@ -737,9 +765,13 @@ pub(in crate::client::shell) fn render_workspace_rows(
     } else if dragged {
         Some(palette.surface1)
     } else if focused {
-        Some(workspace_active_background(palette, navigating))
+        Some(if navigating {
+            workspace_active_background(palette, true)
+        } else {
+            family.map_or(palette.active_row_bg, |style| style.background(true))
+        })
     } else {
-        None
+        family.map(|style| style.background(false))
     };
     if let Some(background) = background {
         for y in area.y..area.bottom() {

@@ -270,6 +270,8 @@ fn every_dialog_and_menu_occludes_its_panel_not_the_whole_screen() {
             section: ClientSettingsSection::Theme,
             selected: 0,
             original_theme_name: String::new(),
+            original_workspace_colours: false,
+            original_workspace_colour_palette: crate::config::WorkspaceColourPalette::Mixed,
             original_palette: palette,
             integrations: Vec::new(),
             integration_messages: Vec::new(),

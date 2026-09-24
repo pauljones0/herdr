@@ -1,6 +1,9 @@
 use super::*;
 use crossterm::event::{KeyCode, KeyModifiers};
 
+// The Theme section starts with the off/theme/mixed choices for workspace colours.
+pub(super) const THEME_CHOICE_OFFSET: usize = 3;
+
 pub(super) fn normalized_theme_name(name: &str) -> String {
     name.to_lowercase().replace([' ', '_'], "-")
 }
@@ -11,6 +14,7 @@ fn theme_index(name: &str) -> usize {
         .iter()
         .position(|candidate| normalized_theme_name(candidate) == normalized)
         .unwrap_or(0)
+        + THEME_CHOICE_OFFSET
 }
 
 fn indicator_index(style: crate::config::StatusIndicatorStyle) -> usize {
@@ -37,6 +41,8 @@ impl ClientShellState {
             section: ClientSettingsSection::Theme,
             selected: theme_index(&self.config.theme_name),
             original_theme_name: self.config.theme_name.clone(),
+            original_workspace_colours: self.config.workspace_colours,
+            original_workspace_colour_palette: self.config.workspace_colour_palette,
             original_palette: self.config.palette.clone(),
             integrations: Vec::new(),
             integration_messages: Vec::new(),
@@ -96,7 +102,9 @@ impl ClientShellState {
     fn settings_choice_count(&self) -> usize {
         match self.overlay.as_ref() {
             Some(ClientShellOverlay::Settings(settings)) => match settings.section {
-                ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
+                ClientSettingsSection::Theme => {
+                    THEME_CHOICE_OFFSET + crate::config::THEME_NAMES.len()
+                }
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => settings.integrations.len(),
@@ -143,7 +151,12 @@ impl ClientShellState {
         let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_ref() else {
             return;
         };
-        let Some(name) = crate::config::THEME_NAMES.get(settings.selected) else {
+        let Some(index) = settings.selected.checked_sub(THEME_CHOICE_OFFSET) else {
+            self.config.theme_name = settings.original_theme_name.clone();
+            self.config.palette = settings.original_palette.clone();
+            return;
+        };
+        let Some(name) = crate::config::THEME_NAMES.get(index) else {
             return;
         };
         self.config.theme_name = (*name).to_owned();
@@ -189,10 +202,26 @@ impl ClientShellState {
         let selected = settings.selected;
         match section {
             ClientSettingsSection::Theme => {
-                let Some(name) = crate::config::THEME_NAMES.get(selected).copied() else {
-                    return;
+                let edit = if selected < THEME_CHOICE_OFFSET {
+                    match selected {
+                        0 => crate::config::ConfigEdit::WorkspaceColours(false),
+                        1 => crate::config::ConfigEdit::WorkspaceColourPalette(
+                            crate::config::WorkspaceColourPalette::Theme,
+                        ),
+                        _ => crate::config::ConfigEdit::WorkspaceColourPalette(
+                            crate::config::WorkspaceColourPalette::Mixed,
+                        ),
+                    }
+                } else {
+                    let Some(name) = crate::config::THEME_NAMES
+                        .get(selected - THEME_CHOICE_OFFSET)
+                        .copied()
+                    else {
+                        return;
+                    };
+                    crate::config::ConfigEdit::Theme(name)
                 };
-                if self.save_settings_edit(crate::config::ConfigEdit::Theme(name), outcome) {
+                if self.save_settings_edit(edit, outcome) {
                     self.overlay = None;
                 }
             }

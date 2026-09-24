@@ -17,8 +17,14 @@ pub(in crate::client::shell) fn render_sidebar_background(
     buffer: &mut Buffer,
     area: Rect,
     palette: &Palette,
+    workspace_colours: bool,
 ) {
-    buffer.set_style(area, Style::default().bg(palette.sidebar_bg));
+    let background = if workspace_colours && palette.sidebar_bg == ratatui::style::Color::Reset {
+        palette.panel_bg
+    } else {
+        palette.sidebar_bg
+    };
+    buffer.set_style(area, Style::default().bg(background));
     let separator_x = area.right().saturating_sub(1);
     for y in area.y..area.bottom() {
         if let Some(cell) = buffer.cell_mut((separator_x, y)) {
@@ -230,6 +236,7 @@ pub(super) fn render_mode_bar(
 }
 
 pub(super) struct ShellRenderState<'a> {
+    pub(super) colours: Option<&'a colours::Colours>,
     pub(super) machine_diagnostics: &'a super::machine_diagnostics::MachineDiagnostics,
     pub(super) endpoints: &'a [ClientShellEndpoint],
     pub(super) active_endpoint_id: &'a ClientEndpointId,
@@ -297,6 +304,7 @@ pub(super) fn render_shell(
                     .selected_workspace_id
                     .map(|target| target.workspace_id.as_str()),
                 &mut hits,
+                state.colours.map(|c| (c, state.active_endpoint_id)),
             );
         } else {
             render_sidebar(

@@ -118,6 +118,14 @@ fn rendering_tint_preserves_explicit_background_and_source() {
         &[],
     );
     source.cells[1].bg = crate::protocol::color_to_u32(Rgb([12, 34, 56]).color());
+    source.hyperlinks.push("https://example.com".into());
+    for cell in &mut source.cells {
+        cell.fg = crate::protocol::color_to_u32(Rgb([25, 200, 75]).color());
+        cell.modifier = crate::protocol::modifier_to_u16(
+            Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED | Modifier::DIM,
+        );
+        cell.hyperlink = Some(0);
+    }
     let original = source.clone();
     let mut target = source.clone();
     let tint = Some(0x02112233);
@@ -126,10 +134,23 @@ fn rendering_tint_preserves_explicit_background_and_source() {
     for c in &mut patch {
         tint_default(c, tint);
     }
+    for (rendered, expected) in target.cells.iter().zip(&mut patch) {
+        // Composition remaps frame-local hyperlink indices into the target table.
+        expected.hyperlink = rendered.hyperlink;
+    }
     assert_eq!(target.cells, patch);
     assert_eq!(source, original);
     assert_eq!(target.cells[0].bg, 0x02112233);
     assert_eq!(target.cells[1].bg, source.cells[1].bg);
+    for (rendered, original) in target.cells.iter().zip(&source.cells) {
+        assert_eq!(rendered.fg, original.fg);
+        assert_eq!(rendered.modifier, original.modifier);
+        assert_eq!(
+            rendered.hyperlink.map(|i| &target.hyperlinks[i as usize]),
+            original.hyperlink.map(|i| &source.hyperlinks[i as usize]),
+        );
+        assert_eq!(rendered.symbol, original.symbol);
+    }
 }
 
 #[test]
@@ -287,7 +308,7 @@ fn sidebar_text_is_readable_and_selection_is_restrained() {
             );
         }
         colours.worlds.insert("local".into(), world);
-        colours.set_sidebar_theme(&palette);
+        colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Mixed);
         assert_eq!(colours.sidebar_styles.len(), THEMES.len());
         for style in colours
             .sidebar_styles
@@ -299,6 +320,89 @@ fn sidebar_text_is_readable_and_selection_is_restrained() {
                 assert!(contrast(fg, style.selected) >= 4.5);
             }
             assert!(style.selected.oklch()[1] < 0.06);
+        }
+    }
+}
+
+#[test]
+fn theme_projection_keeps_assignments_and_mixed_styles_reversible() {
+    let snapshot = super::super::tests::snapshot();
+    let mut colours = Colours::new(None);
+    colours.reconcile(&ClientEndpointId::Local, &snapshot);
+    let before = serde_json::to_vec(&colours.worlds).expect("assignments");
+    let palette = Palette::nord();
+    colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Mixed);
+    let mixed = colours
+        .workspace_style(&ClientEndpointId::Local, "ws_1")
+        .expect("mixed");
+    colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Theme);
+    let adapted = colours
+        .workspace_style(&ClientEndpointId::Local, "ws_1")
+        .expect("adapted");
+    assert_ne!(mixed.title, adapted.title);
+    assert!(contrast(adapted.title, adapted.background) >= 4.5);
+    assert!(contrast(adapted.detail, adapted.selected) >= 4.5);
+    let mut overridden = palette.clone();
+    overridden.text = Color::Rgb(220, 220, 220);
+    colours.set_sidebar_theme(&overridden, crate::config::WorkspaceColourPalette::Theme);
+    assert_ne!(
+        adapted.title,
+        colours
+            .workspace_style(&ClientEndpointId::Local, "ws_1")
+            .expect("custom")
+            .title
+    );
+    colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Mixed);
+    let restored = colours
+        .workspace_style(&ClientEndpointId::Local, "ws_1")
+        .expect("restored");
+    assert_eq!(mixed.title, restored.title);
+    assert_eq!(mixed.detail, restored.detail);
+    assert_eq!(
+        serde_json::to_vec(&colours.worlds).expect("assignments"),
+        before
+    );
+}
+
+#[test]
+fn contrast_adjustment_preserves_hue_on_lighter_dark_theme_surfaces() {
+    let colours = [gamut(0.8, 0.06, 160.), gamut(0.8, 0.06, 300.)];
+    for palette in [
+        Palette::nord(),
+        Palette::dracula(),
+        Palette::gruvbox(),
+        Palette::tokyo_night(),
+    ] {
+        let rgb = |c| {
+            if let Color::Rgb(r, g, b) = c {
+                Rgb([r, g, b])
+            } else {
+                panic!("RGB")
+            }
+        };
+        let styles = colours.map(|header| {
+            chrome_style(
+                Candidate {
+                    header,
+                    accent: header,
+                    lab: header.lab(),
+                    accent_lab: header.lab(),
+                },
+                rgb(palette.panel_bg),
+                rgb(palette.active_row_bg),
+                true,
+                None,
+            )
+        });
+        assert_ne!(
+            styles[0].detail, styles[1].detail,
+            "identity colours must not collapse to the same fallback"
+        );
+        for (style, header) in styles.into_iter().zip(colours) {
+            assert!(contrast(style.detail, style.background) >= 4.5);
+            assert!(contrast(style.detail, style.selected) >= 4.5);
+            assert!(style.detail.oklch()[1] > 0.025);
+            assert!(hue_gap(style.detail.oklch()[2], header.oklch()[2]) < 3.);
         }
     }
 }

@@ -46,6 +46,16 @@ pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Palette source for client-local workspace identity colours.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceColourPalette {
+    Theme,
+    // Preserve the appearance of existing workspace_colours = true configurations.
+    #[default]
+    Mixed,
+}
+
 /// Theme configuration: pick a built-in or override individual tokens.
 ///
 /// ```toml
@@ -61,6 +71,8 @@ pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
 pub struct ThemeConfig {
     /// Client-local generated workspace families and related tab colours (opt-in).
     pub workspace_colours: bool,
+    /// Adapt family colours to the base theme, or use the original mixed catalogue.
+    pub workspace_colour_palette: WorkspaceColourPalette,
     /// Built-in theme name. Default: "catppuccin".
     pub name: Option<String>,
     /// Follow host terminal light/dark appearance and switch between theme names.

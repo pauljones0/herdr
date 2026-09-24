@@ -4,6 +4,9 @@ mod bank;
 mod catalogue;
 mod math;
 mod persistence;
+mod projection;
+#[cfg(test)]
+mod study;
 #[cfg(test)]
 mod tests;
 
@@ -114,11 +117,25 @@ impl World {
 }
 
 #[derive(Clone, Copy)]
-struct SidebarStyle {
+pub(super) struct SidebarStyle {
     background: Rgb,
     selected: Rgb,
     title: Rgb,
     detail: Rgb,
+}
+
+impl SidebarStyle {
+    pub(super) fn background(self, selected: bool) -> Color {
+        if selected {
+            self.selected
+        } else {
+            self.background
+        }
+        .color()
+    }
+    pub(super) fn foreground(self, row: usize) -> Color {
+        if row == 0 { self.title } else { self.detail }.color()
+    }
 }
 
 pub(super) struct Colours {
@@ -126,8 +143,9 @@ pub(super) struct Colours {
     endpoint_keys: HashMap<ClientEndpointId, String>,
     host: crate::terminal_theme::TerminalTheme,
     surfaces: HashMap<String, HashMap<String, Rgb>>,
-    sidebar_light: bool,
     sidebar_theme: Option<(Rgb, Rgb, Rgb)>,
+    source_palette: Option<Palette>,
+    palette_mode: crate::config::WorkspaceColourPalette,
     sidebar_styles: HashMap<Rgb, SidebarStyle>,
     tab_styles: HashMap<Rgb, SidebarStyle>,
     writer: Option<persistence::Writer>,
@@ -152,8 +170,9 @@ impl Colours {
             endpoint_keys: HashMap::new(),
             host: Default::default(),
             surfaces: HashMap::new(),
-            sidebar_light: false,
             sidebar_theme: None,
+            source_palette: None,
+            palette_mode: crate::config::WorkspaceColourPalette::Mixed,
             sidebar_styles: HashMap::new(),
             tab_styles: HashMap::new(),
             writer,
@@ -200,10 +219,6 @@ impl Colours {
     fn refresh_surfaces(&mut self) {
         self.refresh_sidebar_styles();
         self.surfaces.clear();
-        self.sidebar_light = self
-            .host
-            .background
-            .is_some_and(|bg| Rgb([bg.r, bg.g, bg.b]).oklch()[0] > 0.65);
         let (Some(bg), Some(fg)) = (self.host.background, self.host.foreground) else {
             return;
         };
@@ -260,17 +275,64 @@ impl Colours {
     }
     // Theme changes and topology changes refresh these small caches. Drawing only
     // looks up ready-to-use RGB values; no per-frame colour generation is needed.
-    pub fn set_sidebar_theme(&mut self, palette: &Palette) {
+    pub fn set_sidebar_theme(
+        &mut self,
+        palette: &Palette,
+        mode: crate::config::WorkspaceColourPalette,
+    ) {
         let rgb = |c| match c {
             Color::Rgb(r, g, b) => Some(Rgb([r, g, b])),
-            _ => None,
+            Color::Reset => None,
+            color => {
+                let index = match color {
+                    Color::Black => 0,
+                    Color::Red => 1,
+                    Color::Green => 2,
+                    Color::Yellow => 3,
+                    Color::Blue => 4,
+                    Color::Magenta => 5,
+                    Color::Cyan => 6,
+                    Color::Gray => 7,
+                    Color::DarkGray => 8,
+                    Color::LightRed => 9,
+                    Color::LightGreen => 10,
+                    Color::LightYellow => 11,
+                    Color::LightBlue => 12,
+                    Color::LightMagenta => 13,
+                    Color::LightCyan => 14,
+                    Color::White => 15,
+                    Color::Indexed(index) => index as usize,
+                    _ => return None,
+                };
+                self.host.palette[index].map(|c| Rgb([c.r, c.g, c.b]))
+            }
         };
         let background = rgb(palette.sidebar_bg)
             .or_else(|| rgb(palette.panel_bg))
-            .unwrap_or(bank::SIDEBAR[usize::from(self.sidebar_light)]);
-        let active = rgb(palette.active_row_bg).unwrap_or(background);
+            .or_else(|| self.host.background.map(|c| Rgb([c.r, c.g, c.b])));
+        let Some(background) = background else {
+            // An inherited terminal background is unknown until the host replies.
+            // Leave native styling intact rather than assuming an opaque dark grey.
+            self.sidebar_theme = None;
+            self.sidebar_styles.clear();
+            self.tab_styles.clear();
+            return;
+        };
+        let active = rgb(palette.active_row_bg)
+            .or_else(|| (palette.active_row_bg == Color::Reset).then_some(background));
+        let Some(active) = active else {
+            self.sidebar_theme = None;
+            self.sidebar_styles.clear();
+            self.tab_styles.clear();
+            return;
+        };
         let tab_background = rgb(palette.panel_bg).unwrap_or(background);
-        if self.sidebar_theme != Some((background, active, tab_background)) {
+        if self.sidebar_theme != Some((background, active, tab_background))
+            || self.source_palette.as_ref() != Some(palette)
+            || self.palette_mode != mode
+        {
+            self.source_palette = Some(palette.clone());
+            self.palette_mode = mode;
             self.sidebar_theme = Some((background, active, tab_background));
             self.refresh_sidebar_styles();
         }
@@ -279,6 +341,13 @@ impl Colours {
         let Some((background, active, tab_background)) = self.sidebar_theme else {
             return;
         };
+        let tone = (self.palette_mode == crate::config::WorkspaceColourPalette::Theme)
+            .then(|| {
+                self.source_palette
+                    .as_ref()
+                    .and_then(projection::ThemeTone::from_palette)
+            })
+            .flatten();
         self.sidebar_styles.clear();
         self.tab_styles.clear();
         for world in self.worlds.values() {
@@ -287,139 +356,35 @@ impl Colours {
                     let c = w.bank[index];
                     self.sidebar_styles
                         .entry(c.header)
-                        .or_insert_with(|| chrome_style(c, background, active, false));
+                        .or_insert_with(|| chrome_style(c, background, active, false, tone));
                     self.tab_styles
                         .entry(c.header)
-                        .or_insert_with(|| chrome_style(c, tab_background, active, true));
+                        .or_insert_with(|| chrome_style(c, tab_background, active, true, tone));
                 }
             }
         }
     }
-    pub fn paint_sidebar(&self, buffer: &mut Buffer, area: Rect, palette: &Palette) {
-        let background = self
-            .sidebar_theme
-            .map(|(bg, _, _)| bg)
-            .unwrap_or(bank::SIDEBAR[usize::from(self.sidebar_light)])
-            .color();
-        for y in area.y..area.bottom() {
-            for x in area.x..area.right() {
-                if let Some(cell) = buffer.cell_mut((x, y)) {
-                    cell.set_bg(background);
-                    // Restore normal theme typography for controls; family text is
-                    // applied to workspace/agent rows below.
-                    if cell.fg == palette.mauve {
-                        cell.set_fg(palette.overlay0);
-                    }
-                }
-            }
-        }
+    pub fn workspace_style(&self, endpoint: &ClientEndpointId, id: &str) -> Option<SidebarStyle> {
+        let w = self.workspace(endpoint, id)?;
+        self.sidebar_styles.get(&w.bank[w.parent].header).copied()
     }
-    fn paint_sidebar_row(
+    pub fn agent_style(
         &self,
-        buffer: &mut Buffer,
-        rect: Rect,
-        c: Candidate,
-        selected: bool,
-        palette: &Palette,
-    ) {
-        let Some(style) = self.sidebar_styles.get(&c.header) else {
-            return;
-        };
-        for y in rect.y..rect.bottom() {
-            for x in rect.x..rect.right() {
-                if let Some(cell) = buffer.cell_mut((x, y)) {
-                    cell.set_bg(
-                        if selected {
-                            style.selected
-                        } else {
-                            style.background
-                        }
-                        .color(),
-                    );
-                    if !semantic_cell(cell, palette) {
-                        cell.set_fg(
-                            if y == rect.y {
-                                style.title
-                            } else {
-                                style.detail
-                            }
-                            .color(),
-                        );
-                    }
-                    cell.modifier.remove(Modifier::UNDERLINED);
-                    if selected && y == rect.y {
-                        cell.modifier.insert(Modifier::BOLD);
-                    }
-                }
-            }
-        }
+        endpoint: &ClientEndpointId,
+        workspace: &str,
+        tab: &str,
+    ) -> Option<SidebarStyle> {
+        let w = self.workspace(endpoint, workspace)?;
+        let tab = w.tabs.iter().find(|t| t.id == tab)?;
+        self.sidebar_styles.get(&w.bank[tab.colour].header).copied()
     }
-    pub fn paint_agents(
-        &self,
-        buffer: &mut Buffer,
-        hits: &ShellHitMap,
-        active: (&ClientEndpointId, &ClientShellSnapshot),
-        endpoints: &[ClientShellEndpoint],
-        palette: &Palette,
-    ) {
-        let rows = hits
-            .agents
-            .iter()
-            .map(|(rect, pane)| (rect, active.0, pane))
-            .chain(
-                hits.endpoint_agents
-                    .iter()
-                    .map(|(rect, endpoint, pane)| (rect, endpoint, pane)),
-            );
-        for (rect, endpoint, pane) in rows {
-            let snapshot = if endpoint == active.0 {
-                Some(active.1)
-            } else {
-                endpoints
-                    .iter()
-                    .find(|e| &e.endpoint_id == endpoint)
-                    .and_then(|e| e.snapshot.as_deref())
-            };
-            let Some(agent) = snapshot.and_then(|s| s.agents.iter().find(|a| &a.pane_id == pane))
-            else {
-                continue;
-            };
-            let Some(w) = self.workspace(endpoint, &agent.workspace_id) else {
-                continue;
-            };
-            let Some(tab) = w.tabs.iter().find(|t| t.id == agent.tab_id) else {
-                continue;
-            };
-            self.paint_sidebar_row(
-                buffer,
-                *rect,
-                w.bank[tab.colour],
-                endpoint == active.0 && agent.focused,
-                palette,
-            );
-        }
-    }
-    pub fn paint_chrome(
+    pub fn paint_tabs(
         &self,
         buffer: &mut Buffer,
         hits: &ShellHitMap,
         endpoint: &ClientEndpointId,
         snapshot: &ClientShellSnapshot,
-        palette: &Palette,
-        navigation: Option<&WorkspaceNavigationTarget>,
     ) {
-        for hit in &hits.workspaces {
-            if let Some(w) = self.workspace(&hit.endpoint_id, &hit.workspace_id) {
-                let selected = navigation
-                    .is_some_and(|target| target.matches(&hit.endpoint_id, &hit.workspace_id))
-                    || snapshot
-                        .workspaces
-                        .iter()
-                        .any(|s| s.workspace_id == hit.workspace_id && s.focused)
-                        && &hit.endpoint_id == endpoint;
-                self.paint_sidebar_row(buffer, hit.rect, w.bank[w.parent], selected, palette);
-            }
-        }
         let Some(w) = snapshot
             .focused_workspace_id
             .as_deref()
@@ -431,70 +396,81 @@ impl Colours {
             if let Some(t) = w.tabs.iter().find(|t| &t.id == id) {
                 let selected = snapshot.tabs.iter().any(|s| &s.tab_id == id && s.focused);
                 if let Some(style) = self.tab_styles.get(&w.bank[t.colour].header) {
-                    paint_tab(buffer, *rect, *style, selected, palette);
+                    paint_tab(buffer, *rect, *style, selected);
                 }
             }
         }
     }
 }
 
-fn semantic_cell(cell: &ratatui::buffer::Cell, palette: &Palette) -> bool {
-    [
-        palette.green,
-        palette.yellow,
-        palette.red,
-        palette.blue,
-        palette.peach,
-    ]
-    .contains(&cell.fg)
-        && cell.symbol() != " "
-}
-
-fn chrome_style(c: Candidate, background: Rgb, active: Rgb, tab: bool) -> SidebarStyle {
+fn chrome_style(
+    c: Candidate,
+    background: Rgb,
+    active: Rgb,
+    tab: bool,
+    tone: Option<projection::ThemeTone>,
+) -> SidebarStyle {
     let selected = Rgb(std::array::from_fn(|i| {
         ((u16::from(active.0[i]) * 9 + u16::from(c.header.0[i])) / 10) as u8
     }));
     let hue = c.header.oklch()[2];
     let light = background.luminance() > 0.4;
-    let text = |l, chroma| {
+    let text = |l: f64, chroma| {
+        let readable = |tint| contrast(tint, background).min(contrast(tint, selected)) >= 4.5;
         let tint = gamut(l, chroma, hue);
-        if contrast(tint, background) >= 4.5 && contrast(tint, selected) >= 4.5 {
-            tint
-        } else if contrast(bank::LIGHT, background).min(contrast(bank::LIGHT, selected))
-            > contrast(bank::INK, background).min(contrast(bank::INK, selected))
-        {
-            bank::LIGHT
-        } else {
-            bank::INK
+        if readable(tint) {
+            return tint;
         }
+        // Preserve identity hue before considering an achromatic fallback. A
+        // fixed grey fallback made every Nord/Dracula inactive tab identical.
+        let endpoint = if contrast(Rgb([255, 255, 255]), background)
+            .min(contrast(Rgb([255, 255, 255]), selected))
+            > contrast(Rgb([0, 0, 0]), background).min(contrast(Rgb([0, 0, 0]), selected))
+        {
+            1.
+        } else {
+            0.
+        };
+        let mut result = gamut(endpoint, chroma, hue);
+        if !readable(result) {
+            return result;
+        }
+        let (mut unsafe_l, mut safe_l) = (l, endpoint);
+        for _ in 0..16 {
+            let middle = (unsafe_l + safe_l) / 2.;
+            let candidate = gamut(middle, chroma, hue);
+            if readable(candidate) {
+                safe_l = middle;
+                result = candidate;
+            } else {
+                unsafe_l = middle;
+            }
+        }
+        result
     };
+    let title = tone.map(|tone| tone.text(light, tab, false)).unwrap_or((
+        if light {
+            0.38
+        } else if tab {
+            0.83
+        } else {
+            0.79
+        },
+        if tab { 0.065 } else { 0.045 },
+    ));
+    let detail = tone.map(|tone| tone.text(light, tab, true)).unwrap_or((
+        if light { 0.45 } else { 0.69 },
+        if tab { 0.045 } else { 0.018 },
+    ));
     SidebarStyle {
         background,
         selected,
-        title: text(
-            if light {
-                0.38
-            } else if tab {
-                0.83
-            } else {
-                0.79
-            },
-            if tab { 0.065 } else { 0.045 },
-        ),
-        detail: text(
-            if light { 0.45 } else { 0.69 },
-            if tab { 0.045 } else { 0.018 },
-        ),
+        title: text(title.0, title.1),
+        detail: text(detail.0, detail.1),
     }
 }
 
-fn paint_tab(
-    buffer: &mut Buffer,
-    rect: Rect,
-    style: SidebarStyle,
-    selected: bool,
-    palette: &Palette,
-) {
+fn paint_tab(buffer: &mut Buffer, rect: Rect, style: SidebarStyle, selected: bool) {
     for y in rect.y..rect.bottom() {
         for x in rect.x..rect.right() {
             if let Some(cell) = buffer.cell_mut((x, y)) {
@@ -506,9 +482,7 @@ fn paint_tab(
                     }
                     .color(),
                 );
-                if !semantic_cell(cell, palette) {
-                    cell.set_fg(if selected { style.title } else { style.detail }.color());
-                }
+                cell.set_fg(if selected { style.title } else { style.detail }.color());
                 // Explicit contrast-checked colours rather than terminal DIM,
                 // whose intensity varies across emulators and can become unreadable.
                 cell.modifier

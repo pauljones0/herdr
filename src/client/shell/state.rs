@@ -14,6 +14,7 @@ pub(crate) enum ClientShellKeybindingSource {
 
 pub(crate) struct ClientShellConfig {
     pub(super) workspace_colours: bool,
+    pub(super) workspace_colour_palette: crate::config::WorkspaceColourPalette,
     pub(super) sidebar_width: u16,
     pub(super) sidebar_min_width: u16,
     pub(super) sidebar_max_width: u16,
@@ -416,6 +417,8 @@ pub(super) struct ClientSettingsOverlay {
     pub(super) section: ClientSettingsSection,
     pub(super) selected: usize,
     pub(super) original_theme_name: String,
+    pub(super) original_workspace_colours: bool,
+    pub(super) original_workspace_colour_palette: crate::config::WorkspaceColourPalette,
     pub(super) original_palette: Palette,
     pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,
     pub(super) integration_messages: Vec<String>,

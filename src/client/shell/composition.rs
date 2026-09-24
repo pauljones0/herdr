@@ -55,6 +55,7 @@ impl ClientShellState {
                     == Some(ClientEndpointStatus::Online)
         });
         let mut render_state = render::ShellRenderState {
+            colours: self.config.workspace_colours.then_some(&self.colours),
             machine_diagnostics: &self.machine_diagnostics,
             endpoints: &self.endpoints,
             active_endpoint_id: &self.active_endpoint_id,
@@ -96,29 +97,6 @@ impl ClientShellState {
                 &mut render_state,
                 &mut self.hits,
             );
-        }
-        if self.config.workspace_colours {
-            if let Some(snapshot) = self.snapshot.as_deref() {
-                self.colours
-                    .paint_sidebar(&mut buffer, sidebar, &self.config.palette);
-                self.colours.paint_agents(
-                    &mut buffer,
-                    &self.hits,
-                    (&self.active_endpoint_id, snapshot),
-                    &self.endpoints,
-                    &self.config.palette,
-                );
-                self.colours.paint_chrome(
-                    &mut buffer,
-                    &self.hits,
-                    &self.active_endpoint_id,
-                    snapshot,
-                    &self.config.palette,
-                    self.navigate_workspace_id
-                        .as_ref()
-                        .filter(|_| self.mode == ClientShellMode::Navigate),
-                );
-            }
         }
         if !self.config.mouse_capture {
             self.hits = ShellHitMap::default();
@@ -172,7 +150,8 @@ impl ClientShellState {
 
     pub(crate) fn compose(&mut self, cols: u16, rows: u16) -> Option<FrameData> {
         if self.config.workspace_colours {
-            self.colours.set_sidebar_theme(&self.config.palette);
+            self.colours
+                .set_sidebar_theme(&self.config.palette, self.config.workspace_colour_palette);
         }
         self.last_composed_at = Some(std::time::Instant::now());
         self.selection_repaint_deadline = None;
@@ -233,6 +212,7 @@ impl ClientShellState {
             snapshot,
             &self.config,
             render::ShellRenderState {
+                colours: self.config.workspace_colours.then_some(&self.colours),
                 machine_diagnostics: &self.machine_diagnostics,
                 endpoints: &self.endpoints,
                 active_endpoint_id: &self.active_endpoint_id,
@@ -362,24 +342,7 @@ impl ClientShellState {
         }
         if self.config.workspace_colours {
             self.colours
-                .paint_sidebar(&mut buffer, layout.sidebar, &self.config.palette);
-            self.colours.paint_agents(
-                &mut buffer,
-                &self.hits,
-                (&self.active_endpoint_id, snapshot),
-                &self.endpoints,
-                &self.config.palette,
-            );
-            self.colours.paint_chrome(
-                &mut buffer,
-                &self.hits,
-                &self.active_endpoint_id,
-                snapshot,
-                &self.config.palette,
-                self.navigate_workspace_id
-                    .as_ref()
-                    .filter(|_| self.mode == ClientShellMode::Navigate),
-            );
+                .paint_tabs(&mut buffer, &self.hits, &self.active_endpoint_id, snapshot);
         }
         let mut frame = FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, None, &[]);
         let mode_bar_cells = mode_bar.map(|bar| {

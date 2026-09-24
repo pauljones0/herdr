@@ -83,6 +83,13 @@ impl ClientShellState {
                     if let Some(snapshot) = self.snapshot.as_deref() {
                         self.colours.reconcile(&self.active_endpoint_id, snapshot);
                     }
+                    for endpoint in &self.endpoints {
+                        if endpoint.endpoint_id != self.active_endpoint_id {
+                            if let Some(snapshot) = endpoint.snapshot.as_deref() {
+                                self.colours.reconcile(&endpoint.endpoint_id, snapshot);
+                            }
+                        }
+                    }
                 }
                 if let Some(appearance) = self.host_appearance {
                     self.config.palette = crate::app::client_palette_for_appearance(
@@ -121,6 +128,7 @@ impl ClientShellConfig {
         let theme_runtime = crate::app::client_theme_runtime_from_config(config);
         Self {
             workspace_colours: config.theme.workspace_colours,
+            workspace_colour_palette: config.theme.workspace_colour_palette,
             sidebar_width: config.ui.sidebar_width,
             sidebar_min_width: config.ui.sidebar_min_width,
             sidebar_max_width: config.ui.sidebar_max_width,
@@ -354,6 +362,7 @@ impl ClientShellConfig {
 
         if !invalid_section("theme") {
             self.workspace_colours = config.theme.workspace_colours;
+            self.workspace_colour_palette = config.theme.workspace_colour_palette;
             self.theme_runtime = crate::app::client_theme_runtime_from_config(config);
             self.theme_name = self.theme_runtime.manual_name.clone();
             self.palette = crate::app::client_palette_from_config(config);
