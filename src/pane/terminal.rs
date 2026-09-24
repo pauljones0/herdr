@@ -1232,6 +1232,7 @@ impl GhosttyPaneTerminal {
                 foreground_unowned,
                 background_unowned,
             );
+            let _ = core.render_state.set_dirty(crate::ghostty::Dirty::Full);
         }
     }
 
@@ -3349,6 +3350,17 @@ fn respond_to_default_color_event(
     core: &mut GhosttyPaneCore,
     event: DefaultColorEvent,
 ) -> Option<Bytes> {
+    // libghostty updates OSC 10/11 defaults without marking untouched rows dirty.
+    // Every default-coloured cell must be projected again, including blank rows.
+    if matches!(
+        event,
+        DefaultColorEvent::Set(DefaultColorQuery::Foreground | DefaultColorQuery::Background)
+            | DefaultColorEvent::Reset(
+                DefaultColorQuery::Foreground | DefaultColorQuery::Background
+            )
+    ) {
+        let _ = core.render_state.set_dirty(crate::ghostty::Dirty::Full);
+    }
     match event {
         DefaultColorEvent::Query(_) | DefaultColorEvent::PaletteQuery(_) => {
             default_color_event_response(core, event)

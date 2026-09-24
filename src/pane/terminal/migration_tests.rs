@@ -300,14 +300,34 @@ fn mixed_reflow_reads_are_stable_and_chunk_independent() {
 fn incremental_rows_reconstruct_full_render() {
     let mut incremental = Harness::new(12, 5);
     let mut full = Harness::new(12, 5);
+    let theme = crate::terminal_theme::TerminalTheme {
+        foreground: Some(crate::terminal_theme::RgbColor {
+            r: 220,
+            g: 220,
+            b: 220,
+        }),
+        background: Some(crate::terminal_theme::RgbColor {
+            r: 30,
+            g: 30,
+            b: 30,
+        }),
+        ..Default::default()
+    };
+    incremental.pane.ghostty.apply_host_terminal_theme(theme);
+    full.pane.ghostty.apply_host_terminal_theme(theme);
     let mut retained = vec![CellData::from_ratatui_cell(&ratatui::buffer::Cell::default()); 60];
     // Independent terminals: full render must not consume incremental dirty state.
     for bytes in [
         b"".as_slice(),
         "ab\x1b[1;31m界e\u{301}\x1b[0m\r\nnext".as_bytes(),
-        b"\x1b[2;2HZ",
+        b"\x1b[2;2HZ\x1b[48;2;20;40;90mE\x1b[0m",
         b"\x1b[1;1HA\x1b[5;8HB",
         b"\x1b]4;1;rgb:12/34/56\x07",
+        // Global default colours affect untouched rows as well as new output.
+        b"\x1b]11;#101e30\x07",
+        b"\x1b]111\x07",
+        b"\x1b]10;#d0e0f0\x07",
+        b"\x1b]110\x07",
         b"\x1b[3;4H",
         b"\x1b[?1049hALT",
         b"\x1b[?1049l",
@@ -329,6 +349,10 @@ fn incremental_rows_reconstruct_full_render() {
         }
         assert_eq!(retained, full.full_cells(), "after {bytes:?}");
         assert_eq!(incremental.cursor(), full.cursor());
+        assert!(matches!(
+            incremental.pane.collect_dirty_patch(12, 5),
+            TerminalDirtyPatchOutcome::Clean
+        ));
     }
 }
 

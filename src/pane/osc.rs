@@ -796,6 +796,7 @@ pub(super) fn restore_host_terminal_theme_if_needed(
     core.child_default_foreground_changed = false;
     core.child_default_background_changed = false;
     write_host_terminal_theme(&mut core.terminal, core.host_terminal_theme);
+    let _ = core.render_state.set_dirty(crate::ghostty::Dirty::Full);
     info!(
         pane = pane_id.raw(),
         owner_pgid, "restored host terminal default colors after transient override"
