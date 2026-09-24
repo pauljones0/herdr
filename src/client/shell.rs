@@ -6,6 +6,7 @@ mod aggregate_navigation;
 mod machine_diagnostics;
 mod workspace_navigation;
 use workspace_navigation::{PendingWorkspaceHighlight, WorkspaceNavigationTarget};
+mod colours;
 mod composition;
 mod config;
 mod context_menu;
@@ -244,6 +245,15 @@ fn panel_contrast_fg(palette: &Palette) -> ratatui::style::Color {
 }
 
 fn blit_pane_surface(target: &mut FrameData, source: &FrameData, area: Rect) {
+    blit_pane_surface_tinted(target, source, area, None);
+}
+
+fn blit_pane_surface_tinted(
+    target: &mut FrameData,
+    source: &FrameData,
+    area: Rect,
+    tint: Option<u32>,
+) {
     let copy_width = source.width.min(area.width);
     let copy_height = source.height.min(area.height);
     let hyperlink_base = target.hyperlinks.len() as u32;
@@ -262,6 +272,7 @@ fn blit_pane_surface(target: &mut FrameData, source: &FrameData, area: Rect) {
                 continue;
             };
             *target_cell = source_cell.clone();
+            colours::tint_default(target_cell, tint);
             target_cell.hyperlink = source_cell.hyperlink.and_then(|index| {
                 ((index as usize) < source.hyperlinks.len()).then_some(hyperlink_base + index)
             });

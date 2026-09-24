@@ -176,6 +176,15 @@ impl ClientShellState {
             let (cols, rows) = self.last_composed_size.unwrap_or_default();
             self.layout(cols, rows).pane_surface
         });
+        let tint = self
+            .config
+            .workspace_colours
+            .then(|| {
+                self.snapshot
+                    .as_deref()
+                    .and_then(|snapshot| self.colours.surface(&self.active_endpoint_id, snapshot))
+            })
+            .flatten();
         let composed_patch = fast_path_area.map(|area| ClientComposedSurfacePatch {
             rows: patch
                 .rows
@@ -183,7 +192,15 @@ impl ClientShellState {
                 .map(|row| crate::protocol::PaneSurfacePatchRow {
                     x: area.x.saturating_add(row.x),
                     y: area.y.saturating_add(row.y),
-                    cells: row.cells.clone(),
+                    cells: row
+                        .cells
+                        .iter()
+                        .map(|source| {
+                            let mut cell = source.clone();
+                            colours::tint_default(&mut cell, tint);
+                            cell
+                        })
+                        .collect(),
                 })
                 .collect(),
             cursor: patch

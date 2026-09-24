@@ -59,6 +59,8 @@ pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ThemeConfig {
+    /// Client-local generated workspace families and related tab colours (opt-in).
+    pub workspace_colours: bool,
     /// Built-in theme name. Default: "catppuccin".
     pub name: Option<String>,
     /// Follow host terminal light/dark appearance and switch between theme names.

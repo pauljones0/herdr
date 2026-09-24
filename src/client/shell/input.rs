@@ -168,6 +168,10 @@ impl ClientShellState {
             }
             if let Some(update) = host_theme_update(&event) {
                 push_host_theme_update(&mut outcome.requests, update);
+                self.colours.update_host(&event);
+                if self.config.workspace_colours {
+                    outcome.repaint = true;
+                }
             }
             match event {
                 RawInputEvent::Key(key) => self.handle_key(key, &mut outcome),

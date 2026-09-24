@@ -35,6 +35,12 @@
       "title": "Theme",
       "keys": [
         {
+          "key": "theme.workspace_colours",
+          "type": "boolean",
+          "default": "false",
+          "description": "Generate named workspace colour families and related tab colours in the native client."
+        },
+        {
           "key": "theme.name",
           "type": "string",
           "default": "\"catppuccin\"",

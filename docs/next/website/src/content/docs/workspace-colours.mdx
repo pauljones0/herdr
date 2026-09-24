@@ -1,0 +1,73 @@
+---
+title: Workspace colour families
+description: Generated workspace themes with coordinated local tabs in this custom build.
+---
+
+Enable generated workspace colours in the native client:
+
+```toml
+[theme]
+workspace_colours = true
+```
+
+This custom build chooses from 24 named art directions, including Forest, Pastel / kawaii,
+Glacier, Sakura, Cosmic, and Pomegranate. Each workspace receives a generated variant;
+its tabs draw related colours from that family. No seed needs to be configured.
+
+Workspace labels remain your labels. Sidebar rows follow the chosen Herdr theme:
+unselected workspace and agent rows keep the normal background with softly coloured
+names. Only selected rows receive a restrained family tint. Agent names use their
+owning tab’s family, including agents on other connected machines. Focus uses native
+bold styling without added arrows, underlines, or accent stripes. Tabs use the normal panel background and muted family-coloured labels. The selected
+tab uses brighter, bold text and a restrained family tint. There are no filled colour
+blocks on inactive tabs. Explicit RGB colours keep muted labels readable instead of
+relying on the terminal DIM attribute. Colour identity is subtler in text than on large
+backgrounds; tab labels remain the primary identifier.
+
+Workspace detail text (such as branch/path) uses a muted workspace hue; agent details
+use the owning tab’s hue. Cached text colours are contrast-checked against the normal
+and selected backgrounds. The sidebar uses an explicit theme sidebar background when
+configured, otherwise its panel background; terminal-derived themes use a neutral
+fallback. Status colours retain their meaning.
+
+Adding or closing a tab advances the workspace's history without changing its theme.
+Moving a tab preserves its colour when it still fits. Otherwise, the moved tab can
+change, with at most two additional existing tabs repaired within limited perceptual
+displacement. Transferring into another workspace chooses from the destination family.
+The search stays within the theme even when it cannot fully separate every neighbour.
+
+This version of Herdr has a single horizontally scrolling tab strip. Adjacency follows
+that strip's order, including overflow tabs; resizing and scrolling do not reroll colours.
+It does not introduce the prototype's wrapped grid.
+
+Assignments and random-stream continuation are saved locally beside the client's chrome
+preferences, in a separate `*.colours-v1.json` file. Reattaching to the same session on
+this computer preserves colours. Different computers have independent presentation
+preferences. Turning the option off restores ordinary rendering without deleting the
+saved assignments.
+
+## Terminal surfaces
+
+When the host reports its foreground and background, the client can apply a quiet,
+workspace-related tint to default backgrounds. It preserves the host's lightness and
+checks foreground and reported palette contrast. If a safe tint cannot be found, it
+uses the inherited background. Explicit application backgrounds and ANSI colours are
+not recoloured. Light terminals usually keep their inherited surface.
+
+This is a client-side presentation feature. OSC colour-query replies still describe
+the underlying terminal theme. Herdr represents an explicit OSC 11 override equal to
+the host background as a default background, so that particular case can also receive
+the client tint. Other explicit OSC 11 backgrounds remain visible; OSC 111 returns to
+the inherited, client-tinted default.
+
+## Performance
+
+Rendering uses cached RGB values. Candidate generation and perceptual calculations run
+only when workspace/tab membership or order changes. The allocator starts with 1,024
+procedural samples and expands to 4,096 only when needed. It evaluates feasibility
+before freshness, then scores a random sample of up to 256 feasible candidates for
+tonal coherence and variety. Repair distances are cached per action; failed searches
+do not consume random draws. Checkpoint disk writes use a background thread.
+
+These bounds control work; they are not a proof that every arrangement can be repaired.
+The palette remains inside its named art direction if the search runs out of options.

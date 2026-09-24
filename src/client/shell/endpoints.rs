@@ -613,6 +613,9 @@ impl ClientShellState {
                 .iter()
                 .any(|agent| &agent.pane_id == pane_id)
         });
+        if self.config.workspace_colours {
+            self.colours.reconcile(endpoint_id, &snapshot);
+        }
         let endpoint = &mut self.endpoints[index];
         endpoint.agent_recency = recency;
         endpoint.snapshot_generation = generation;

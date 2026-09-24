@@ -13,6 +13,7 @@ pub(crate) enum ClientShellKeybindingSource {
 }
 
 pub(crate) struct ClientShellConfig {
+    pub(super) workspace_colours: bool,
     pub(super) sidebar_width: u16,
     pub(super) sidebar_min_width: u16,
     pub(super) sidebar_max_width: u16,
@@ -844,6 +845,7 @@ pub(super) struct ClientCopyModeState {
 }
 
 pub(crate) struct ClientShellState {
+    pub(super) colours: colours::Colours,
     pub(super) machine_diagnostics: super::machine_diagnostics::MachineDiagnostics,
     pub(super) config: ClientShellConfig,
     pub(super) snapshot: Option<Box<ClientShellSnapshot>>,
@@ -1009,6 +1011,12 @@ impl ClientShellState {
         }
         Self {
             machine_diagnostics: Default::default(),
+            colours: colours::Colours::new(
+                config
+                    .workspace_colours
+                    .then_some(config.preferences_path.as_deref())
+                    .flatten(),
+            ),
             config,
             snapshot: None,
             active_snapshot_generation: None,
@@ -1559,6 +1567,9 @@ impl ClientShellState {
                 }
                 Some(_) => {}
             }
+        }
+        if self.config.workspace_colours {
+            self.colours.reconcile(&self.active_endpoint_id, &snapshot);
         }
         self.snapshot = Some(snapshot);
         self.reconcile_pending_workspace_highlight();

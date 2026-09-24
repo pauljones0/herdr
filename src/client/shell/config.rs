@@ -77,6 +77,13 @@ impl ClientShellState {
                     &loaded.diagnostics,
                     &loaded.invalid_sections,
                 );
+                if self.config.workspace_colours {
+                    self.colours
+                        .enable_persistence(self.config.preferences_path.as_deref());
+                    if let Some(snapshot) = self.snapshot.as_deref() {
+                        self.colours.reconcile(&self.active_endpoint_id, snapshot);
+                    }
+                }
                 if let Some(appearance) = self.host_appearance {
                     self.config.palette = crate::app::client_palette_for_appearance(
                         &self.config.theme_runtime,
@@ -113,6 +120,7 @@ impl ClientShellConfig {
     pub(crate) fn from_config(config: &Config) -> Self {
         let theme_runtime = crate::app::client_theme_runtime_from_config(config);
         Self {
+            workspace_colours: config.theme.workspace_colours,
             sidebar_width: config.ui.sidebar_width,
             sidebar_min_width: config.ui.sidebar_min_width,
             sidebar_max_width: config.ui.sidebar_max_width,
@@ -345,6 +353,7 @@ impl ClientShellConfig {
         }
 
         if !invalid_section("theme") {
+            self.workspace_colours = config.theme.workspace_colours;
             self.theme_runtime = crate::app::client_theme_runtime_from_config(config);
             self.theme_name = self.theme_runtime.manual_name.clone();
             self.palette = crate::app::client_palette_from_config(config);

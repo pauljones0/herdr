@@ -97,6 +97,29 @@ impl ClientShellState {
                 &mut self.hits,
             );
         }
+        if self.config.workspace_colours {
+            if let Some(snapshot) = self.snapshot.as_deref() {
+                self.colours
+                    .paint_sidebar(&mut buffer, sidebar, &self.config.palette);
+                self.colours.paint_agents(
+                    &mut buffer,
+                    &self.hits,
+                    (&self.active_endpoint_id, snapshot),
+                    &self.endpoints,
+                    &self.config.palette,
+                );
+                self.colours.paint_chrome(
+                    &mut buffer,
+                    &self.hits,
+                    &self.active_endpoint_id,
+                    snapshot,
+                    &self.config.palette,
+                    self.navigate_workspace_id
+                        .as_ref()
+                        .filter(|_| self.mode == ClientShellMode::Navigate),
+                );
+            }
+        }
         if !self.config.mouse_capture {
             self.hits = ShellHitMap::default();
         }
@@ -148,6 +171,9 @@ impl ClientShellState {
     }
 
     pub(crate) fn compose(&mut self, cols: u16, rows: u16) -> Option<FrameData> {
+        if self.config.workspace_colours {
+            self.colours.set_sidebar_theme(&self.config.palette);
+        }
         self.last_composed_at = Some(std::time::Instant::now());
         self.selection_repaint_deadline = None;
         if self.last_composed_size != Some((cols, rows)) && self.mode == ClientShellMode::Navigate {
@@ -334,12 +360,38 @@ impl ClientShellState {
             self.hits.tab_scroll_left = Rect::default();
             self.hits.tab_scroll_right = Rect::default();
         }
+        if self.config.workspace_colours {
+            self.colours
+                .paint_sidebar(&mut buffer, layout.sidebar, &self.config.palette);
+            self.colours.paint_agents(
+                &mut buffer,
+                &self.hits,
+                (&self.active_endpoint_id, snapshot),
+                &self.endpoints,
+                &self.config.palette,
+            );
+            self.colours.paint_chrome(
+                &mut buffer,
+                &self.hits,
+                &self.active_endpoint_id,
+                snapshot,
+                &self.config.palette,
+                self.navigate_workspace_id
+                    .as_ref()
+                    .filter(|_| self.mode == ClientShellMode::Navigate),
+            );
+        }
         let mut frame = FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, None, &[]);
         let mode_bar_cells = mode_bar.map(|bar| {
             let start = usize::from(bar.y) * usize::from(frame.width) + usize::from(bar.x);
             frame.cells[start..start + usize::from(bar.width)].to_vec()
         });
-        blit_pane_surface(&mut frame, &surface.frame, layout.pane_surface);
+        let tint = self
+            .config
+            .workspace_colours
+            .then(|| self.colours.surface(&self.active_endpoint_id, snapshot))
+            .flatten();
+        blit_pane_surface_tinted(&mut frame, &surface.frame, layout.pane_surface, tint);
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();
         let has_selection = self
