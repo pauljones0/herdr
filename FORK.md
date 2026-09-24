@@ -9,7 +9,11 @@ This is an unofficial fork, not an upstream release. Both changes are included o
 
 ## See it
 
-[Watch the 24-second navigation recording](docs/next/media/workspace-colours/navigation.mp4)
+Watch 24 seconds of tab and workspace navigation:
+
+https://github.com/user-attachments/assets/5eb385a9-15ec-4ce0-ae26-2b3c17f00630
+
+[Download the MP4](https://github.com/pauljones0/herdr/raw/refs/heads/feature/workspace-colour-families/docs/next/media/workspace-colours/navigation.mp4)
 
 ![Pastel workspace with related tab colours and a matching agent entry](docs/next/media/workspace-colours/01-pastel.png)
 
