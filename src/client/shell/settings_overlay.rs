@@ -44,6 +44,8 @@ pub(super) fn render_settings_overlay(
         .saturating_add(settings.integration_messages.len().min(6) as u16);
     let height = if settings.section == ClientSettingsSection::Integrations {
         integration_height.max(22)
+    } else if settings.section == ClientSettingsSection::Theme {
+        26
     } else {
         22
     };
@@ -130,46 +132,56 @@ pub(super) fn render_settings_overlay(
     match settings.section {
         ClientSettingsSection::Theme => {
             let offset = super::super::settings::THEME_CHOICE_OFFSET;
-            for (index, label) in [
-                "workspace colours: off",
-                "workspace colours: follow theme",
-                "workspace colours: mixed palettes",
-            ]
-            .iter()
-            .enumerate()
-            .take(usize::from(content.height))
+            let text = |buffer: &mut Buffer, row: u16, label: &str| {
+                if row < content.height {
+                    put_text(
+                        buffer,
+                        content.x,
+                        content.y + row,
+                        content.width,
+                        label,
+                        Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+                    );
+                }
+            };
+            text(buffer, 0, " workspace colours");
+            for (index, label) in ["Off", "Theme-adapted", "Original palettes"]
+                .iter()
+                .enumerate()
+                .take(usize::from(content.height.saturating_sub(1)))
             {
-                let rect = Rect::new(content.x, content.y + index as u16, content.width, 1);
+                let rect = Rect::new(content.x, content.y + 1 + index as u16, content.width, 1);
+                let current = if !settings.draft_workspace_colours {
+                    0
+                } else if settings.draft_workspace_colour_palette
+                    == crate::config::WorkspaceColourPalette::Theme
+                {
+                    1
+                } else {
+                    2
+                };
                 draw_choice(
                     buffer,
                     rect,
                     label,
                     index == settings.selected,
-                    index
-                        == if !settings.original_workspace_colours {
-                            0
-                        } else if settings.original_workspace_colour_palette
-                            == crate::config::WorkspaceColourPalette::Theme
-                        {
-                            1
-                        } else {
-                            2
-                        },
+                    index == current,
                     palette,
                 );
                 choice_hits.push((rect, index));
             }
-            if content.height > 4 {
-                put_text(
+            let compact = content.height < 11;
+            if !compact {
+                text(buffer, 4, &format!(" {}", settings.palette_notice));
+                text(
                     buffer,
-                    content.x,
-                    content.y + 4,
-                    content.width,
-                    " base theme",
-                    Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+                    5,
+                    " Tabs share a family. Returning to a theme restores its colours.",
                 );
             }
-            let visible = usize::from(content.height.saturating_sub(5));
+            let theme_start = if compact { 5 } else { 8 };
+            text(buffer, theme_start - 1, " base theme");
+            let visible = usize::from(content.height.saturating_sub(theme_start));
             let scroll = settings
                 .selected
                 .saturating_sub(offset)
@@ -183,7 +195,7 @@ pub(super) fn render_settings_overlay(
             {
                 let rect = Rect::new(
                     content.x,
-                    content.y + 5 + visible_index as u16,
+                    content.y + theme_start + visible_index as u16,
                     content.width,
                     1,
                 );
@@ -194,7 +206,7 @@ pub(super) fn render_settings_overlay(
                     index + offset == settings.selected,
                     super::super::settings::normalized_theme_name(name)
                         == super::super::settings::normalized_theme_name(
-                            &settings.original_theme_name,
+                            &settings.preview_theme_name,
                         ),
                     palette,
                 );
@@ -271,7 +283,11 @@ pub(super) fn render_settings_overlay(
     button(
         buffer,
         close,
-        " esc close ",
+        if settings.section == ClientSettingsSection::Theme {
+            " esc cancel "
+        } else {
+            " esc close "
+        },
         Style::default()
             .fg(palette.text)
             .bg(palette.surface0)
@@ -282,7 +298,11 @@ pub(super) fn render_settings_overlay(
         inner.x,
         inner.bottom().saturating_sub(2),
         inner.width,
-        " ↑↓ select  tab section",
+        if settings.section == ClientSettingsSection::Theme {
+            " ↑↓ preview  tab control  ←→ section  apply saves both"
+        } else {
+            " ↑↓ select  tab section"
+        },
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
 

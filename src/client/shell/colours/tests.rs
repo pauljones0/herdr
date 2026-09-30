@@ -308,6 +308,9 @@ fn sidebar_text_is_readable_and_selection_is_restrained() {
             );
         }
         colours.worlds.insert("local".into(), world);
+        colours
+            .render_keys
+            .insert(ClientEndpointId::Local, "local".into());
         colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Mixed);
         assert_eq!(colours.sidebar_styles.len(), THEMES.len());
         for style in colours
@@ -335,6 +338,8 @@ fn theme_projection_keeps_assignments_and_mixed_styles_reversible() {
     let mixed = colours
         .workspace_style(&ClientEndpointId::Local, "ws_1")
         .expect("mixed");
+    colours.select_profile(Some("nord"));
+    colours.reconcile(&ClientEndpointId::Local, &snapshot);
     colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Theme);
     let adapted = colours
         .workspace_style(&ClientEndpointId::Local, "ws_1")
@@ -352,6 +357,7 @@ fn theme_projection_keeps_assignments_and_mixed_styles_reversible() {
             .expect("custom")
             .title
     );
+    colours.select_profile(None);
     colours.set_sidebar_theme(&palette, crate::config::WorkspaceColourPalette::Mixed);
     let restored = colours
         .workspace_style(&ClientEndpointId::Local, "ws_1")

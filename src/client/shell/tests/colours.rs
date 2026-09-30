@@ -116,6 +116,7 @@ fn workspace_colours_render_scale_profile() {
             let mut state = themed_state();
             state.config.workspace_colours = enabled;
             state.config.workspace_colour_palette = mode;
+            state.refresh_theme_presentation();
             let mut next = surface();
             next.surface_revision += 1;
             next.frame = FrameData::from_ratatui_buffer(

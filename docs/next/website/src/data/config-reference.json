@@ -44,7 +44,7 @@
           "key": "theme.workspace_colour_palette",
           "type": "string",
           "default": "\"mixed\"",
-          "description": "Workspace colour source: mixed preserves catalogue styling; theme adapts its tones to the resolved base theme. Requires workspace_colours.",
+          "description": "Workspace colour source: mixed uses Original palettes; theme uses a curated subset for the displayed built-in theme. Custom overrides and terminal themes fall back to Original palettes. Requires workspace_colours.",
           "values": [
             "theme",
             "mixed"

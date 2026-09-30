@@ -302,7 +302,7 @@ fn resolve_palette_for_theme_name(
     palette
 }
 
-fn resolve_effective_theme(
+pub(crate) fn resolve_effective_theme(
     runtime: &state::ThemeRuntimeConfig,
     appearance: Option<crate::terminal_theme::HostAppearance>,
 ) -> (state::Palette, String) {
@@ -350,6 +350,7 @@ pub(crate) fn client_palette_from_config(config: &Config) -> state::Palette {
     resolve_effective_theme(&runtime, None).0
 }
 
+#[cfg(test)]
 pub(crate) fn client_palette_for_appearance(
     runtime: &state::ThemeRuntimeConfig,
     appearance: crate::terminal_theme::HostAppearance,

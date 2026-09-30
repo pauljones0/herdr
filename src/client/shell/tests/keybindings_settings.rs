@@ -1,6 +1,99 @@
 use super::*;
 
 #[test]
+fn theme_dialog_shows_base_choices_in_short_terminal_and_resolves_alias_cursor() {
+    let mut config = Config::default();
+    config.theme.name = Some("latte".into());
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    assert!(
+        matches!(&state.overlay, Some(ClientShellOverlay::Settings(s))
+        if s.selected == super::super::settings::THEME_CHOICE_OFFSET + 1)
+    );
+    state.compose(106, 19).expect("small frame");
+    assert!(state
+        .hits
+        .settings_choices
+        .iter()
+        .any(|(_, index)| *index >= super::super::settings::THEME_CHOICE_OFFSET));
+    assert!(state
+        .hits
+        .settings_choices
+        .iter()
+        .any(|(_, index)| *index == 0));
+}
+
+#[test]
+fn theme_keyboard_group_switch_preserves_both_pending_choices() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.open_settings_overlay();
+    let nord = crate::config::THEME_NAMES
+        .iter()
+        .position(|name| *name == "nord")
+        .expect("nord")
+        + super::super::settings::THEME_CHOICE_OFFSET;
+    state.select_settings_choice(nord);
+    state.handle_input_bytes(b"\t");
+    assert_eq!(state.config.theme_name, "nord");
+    state.handle_input_bytes(b"j");
+    assert!(state.config.workspace_colours);
+    assert_eq!(
+        state.config.workspace_colour_palette,
+        crate::config::WorkspaceColourPalette::Theme
+    );
+    state.handle_input_bytes(b"\t");
+    assert_eq!(state.config.theme_name, "nord");
+    assert!(matches!(&state.overlay, Some(ClientShellOverlay::Settings(s)) if s.selected == nord));
+    // Settings can be opened while disconnected. A first/reconnecting snapshot
+    // must keep the pending base and curated profile, not the saved manual name.
+    state.set_snapshot(Box::new(snapshot()));
+    assert_eq!(state.config.palette, Palette::nord());
+    assert!(
+        matches!(&state.overlay, Some(ClientShellOverlay::Settings(s))
+        if s.preview_theme_name == "nord" && s.palette_notice.starts_with("Curated families"))
+    );
+    state.cancel_settings_overlay();
+    assert!(!state.config.workspace_colours);
+}
+
+#[test]
+fn curated_preview_survives_host_appearance_and_cancel_uses_latest_automatic_theme() {
+    let mut config = Config::default();
+    config.theme.auto_switch = true;
+    config.theme.workspace_colours = true;
+    config.theme.workspace_colour_palette = crate::config::WorkspaceColourPalette::Theme;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(snapshot()));
+    state.open_settings_overlay();
+    let nord = crate::config::THEME_NAMES
+        .iter()
+        .position(|name| *name == "nord")
+        .expect("nord")
+        + super::super::settings::THEME_CHOICE_OFFSET;
+    state.select_settings_choice(nord);
+    state.select_settings_choice(2);
+    state.handle_raw_events(vec![RawInputEvent::HostColorSchemeChanged(
+        crate::terminal_theme::HostAppearance::Light,
+    )]);
+    assert_eq!(state.config.palette, Palette::nord());
+    assert_eq!(
+        state.config.workspace_colour_palette,
+        crate::config::WorkspaceColourPalette::Mixed
+    );
+    state.cancel_settings_overlay();
+    assert_eq!(
+        state.config.palette,
+        Palette::from_name("catppuccin-latte").expect("latte")
+    );
+    assert_eq!(
+        state.config.workspace_colour_palette,
+        crate::config::WorkspaceColourPalette::Theme
+    );
+}
+
+#[test]
 fn workspace_colours_settings_use_theme_selection_and_cancel_flow() {
     for enabled in [false, true] {
         let mut config = Config::default();
@@ -27,11 +120,14 @@ fn workspace_colours_settings_use_theme_selection_and_cancel_flow() {
             row: choice.y,
             modifiers: KeyModifiers::empty(),
         })]);
-        assert_eq!(state.config.theme_name, original_theme);
-        assert_eq!(state.config.palette, original_palette);
+        assert_ne!(
+            state.config.theme_name, original_theme,
+            "mode selection preserves base preview"
+        );
+        assert_ne!(state.config.palette, original_palette);
         assert_eq!(
-            state.config.workspace_colours, enabled,
-            "selection waits for Apply"
+            state.config.workspace_colours, !enabled,
+            "selection previews immediately"
         );
         assert!(matches!(
             state.overlay,
@@ -39,6 +135,8 @@ fn workspace_colours_settings_use_theme_selection_and_cancel_flow() {
         ));
         state.handle_input_bytes(b"\x1b");
         assert!(state.overlay.is_none());
+        assert_eq!(state.config.theme_name, original_theme);
+        assert_eq!(state.config.palette, original_palette);
         assert_eq!(state.config.workspace_colours, enabled);
 
         state.open_settings_overlay();

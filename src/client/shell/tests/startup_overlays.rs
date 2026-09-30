@@ -1177,10 +1177,10 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
     state.open_settings_overlay();
     state.compose(106, 30).expect("settings overlay");
     for _ in 0..3 {
-        let next = state.handle_input_bytes(b"\t");
+        let next = state.handle_input_bytes(b"\x1b[C");
         assert!(next.actions.is_empty());
     }
-    let integrations = state.handle_input_bytes(b"\t");
+    let integrations = state.handle_input_bytes(b"\x1b[C");
     let [ClientShellAction::Endpoint { request, .. }] = &integrations.actions[..] else {
         panic!("integration section should request endpoint status");
     };

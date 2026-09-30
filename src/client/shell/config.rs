@@ -80,23 +80,17 @@ impl ClientShellState {
                 if self.config.workspace_colours {
                     self.colours
                         .enable_persistence(self.config.preferences_path.as_deref());
-                    if let Some(snapshot) = self.snapshot.as_deref() {
-                        self.colours.reconcile(&self.active_endpoint_id, snapshot);
-                    }
-                    for endpoint in &self.endpoints {
-                        if endpoint.endpoint_id != self.active_endpoint_id {
-                            if let Some(snapshot) = endpoint.snapshot.as_deref() {
-                                self.colours.reconcile(&endpoint.endpoint_id, snapshot);
-                            }
-                        }
-                    }
                 }
-                if let Some(appearance) = self.host_appearance {
-                    self.config.palette = crate::app::client_palette_for_appearance(
-                        &self.config.theme_runtime,
-                        appearance,
-                    );
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    // Unrelated settings saves may reload config during a theme preview.
+                    // Update the cancellation baseline without discarding pending choices.
+                    settings.original_theme_name = self.config.theme_name.clone();
+                    settings.original_palette = self.config.palette.clone();
+                    settings.original_workspace_colours = self.config.workspace_colours;
+                    settings.original_workspace_colour_palette =
+                        self.config.workspace_colour_palette;
                 }
+                self.refresh_theme_presentation();
                 if !self.sidebar_width_manual {
                     self.sidebar_width = self.config.sidebar_width;
                 }

@@ -71,7 +71,7 @@ pub enum WorkspaceColourPalette {
 pub struct ThemeConfig {
     /// Client-local generated workspace families and related tab colours (opt-in).
     pub workspace_colours: bool,
-    /// Adapt family colours to the base theme, or use the original mixed catalogue.
+    /// Use a curated subset for the displayed base theme, or the original catalogue.
     pub workspace_colour_palette: WorkspaceColourPalette,
     /// Built-in theme name. Default: "catppuccin".
     pub name: Option<String>,

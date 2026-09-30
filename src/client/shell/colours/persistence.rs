@@ -55,13 +55,30 @@ fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 pub(super) fn open(path: Option<&Path>) -> (HashMap<String, World>, Option<Writer>) {
+    open_with_extension(path, "colours-v1.json")
+}
+pub(super) fn open_with_extension(
+    path: Option<&Path>,
+    extension: &str,
+) -> (HashMap<String, World>, Option<Writer>) {
     let Some(path) = path else {
         return (HashMap::new(), None);
     };
-    let path: PathBuf = path.with_extension("colours-v1.json");
+    let path: PathBuf = path.with_extension(extension);
+    let limit = if extension == "colours-curated-v1.json" {
+        64 * 1024 * 1024
+    } else {
+        8 * 1024 * 1024
+    };
+    if extension == "colours-curated-v1.json"
+        && std::fs::metadata(&path).is_ok_and(|m| m.len() > limit as u64)
+    {
+        tracing::warn!(path = %path.display(), "curated checkpoint exceeds limit; preserving file and using session-only assignments");
+        return (HashMap::new(), None);
+    }
     let mut worlds = std::fs::read(&path)
         .ok()
-        .filter(|b| b.len() <= 8 * 1024 * 1024)
+        .filter(|b| b.len() <= limit)
         .and_then(|b| serde_json::from_slice::<Saved>(&b).ok())
         .filter(|s| s.version == 1)
         .map(|s| s.worlds)

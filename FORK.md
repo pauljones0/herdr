@@ -9,6 +9,12 @@ This is an unofficial fork, not an upstream release. Both changes are included o
 
 ## See it
 
+Choose the base theme and workspace colours together, preview, cancel, or apply:
+
+![Theme settings with independent base theme and workspace colour choices](docs/next/media/workspace-colours/settings.png)
+
+[Watch the settings demo: preview, Cancel, Apply, and Off/on](https://github.com/pauljones0/herdr/raw/refs/heads/feature/workspace-colour-families/docs/next/media/workspace-colours/settings-demo.mp4)
+
 Watch 24 seconds of tab and workspace navigation:
 
 https://github.com/user-attachments/assets/5eb385a9-15ec-4ce0-ae26-2b3c17f00630
@@ -31,14 +37,17 @@ cd herdr
 just build
 ```
 
-Open **Settings → theme**, select **workspace colours: mixed palettes** or **workspace colours: follow theme**, and choose **apply**.
-Select **workspace colours: off** and apply to restore ordinary styling.
+Open **Settings → theme**, choose a base theme and **workspace colours: Theme-adapted**
+(curated families for that theme) or **Original palettes** (the full catalogue).
+Both choices preview together; **Apply** saves both, and **Cancel/Escape** discards them.
+Use **Tab** to switch controls and **Up/Down** to preview. Choose **Off** for ordinary styling.
+Custom colour overrides and the terminal theme use Original palettes as an explained fallback.
 You can also set the option in your Herdr configuration:
 
 ```toml
 [theme]
 workspace_colours = true
-workspace_colour_palette = "mixed" # or "theme"
+workspace_colour_palette = "theme" # or "mixed" for Original palettes
 ```
 
 Run `./target/release/herdr` from this checkout. To isolate evaluation from an existing session, use a new session name and clear inherited socket overrides:
@@ -59,13 +68,17 @@ The implementation is native Rust client presentation with no new Cargo dependen
 
 See [the full behaviour and limitations](docs/next/website/src/content/docs/workspace-colours.mdx), including OSC-query semantics and client-local persistence.
 
+## Next steps
+
+Open follow-ups are tracked in [TODO.md](TODO.md): settings-integration cleanup and themed-only fonts/colours.
+
 ## Validation
 
-On Linux, `just ci` passed all 3,773 tests (10 skipped), lint, maintenance checks, UI architecture checks and integration asset tests. Documentation contract checks passed separately. All seven render-scale profiles passed after the final styling changes.
+On Linux, `just ci` passed all 3,789 tests (11 skipped), lint, maintenance checks, UI architecture checks and integration asset tests. Documentation contract checks passed separately. All seven render-scale profiles passed with curated palettes enabled.
 
-Populated render medians were 319 µs off / 335 µs on for one pane and 413 µs off / 401 µs on for 15 panes. Differences include measurement noise; no speedup is claimed. Earlier allocation samples were roughly 1–2 ms for ordinary additions, with a difficult repair around 20 ms. These are measurements, not real-time guarantees.
+Populated render medians were 313 µs Off / 314 µs Original / 318 µs Theme-adapted for one pane and 349 / 344 / 350 µs for 15 panes. Differences include measurement noise; no speedup is claimed. Earlier allocation samples were roughly 1–2 ms for ordinary additions, with a difficult repair around 20 ms. These are measurements, not real-time guarantees.
 
-Visual checks used GNOME Terminal on Linux. Automated contrast checks cover dark and light palettes. Windows SDK cross-compilation and live macOS/Windows verification have not been performed for this fork.
+Visual checks used GNOME Terminal on Linux with eight workspaces and eight tabs each across all 17 RGB base themes. Sampled curated label contrast met 4.5:1; some generated neighbours remain similar, so labels still matter. Real UI checks covered combined mouse/keyboard selection, Cancel, Apply, failed-save recovery, custom/terminal fallback, and restart persistence. Windows SDK cross-compilation and live macOS/Windows verification have not been performed for this fork.
 
 ## Upstream
 

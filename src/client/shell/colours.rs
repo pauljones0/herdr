@@ -1,7 +1,11 @@
 //! Client-owned workspace colour families. No colour math is performed while drawing.
 mod allocator;
+mod curated;
+pub(super) use curated::families as curated_families;
 mod bank;
 mod catalogue;
+#[cfg(test)]
+mod curated_tests;
 mod math;
 mod persistence;
 mod projection;
@@ -140,6 +144,13 @@ impl SidebarStyle {
 
 pub(super) struct Colours {
     worlds: HashMap<String, World>,
+    curated_worlds: HashMap<String, World>,
+    preview: Option<HashMap<String, World>>,
+    active_profile: Option<&'static str>,
+    render_keys: HashMap<ClientEndpointId, String>,
+    curated_writer: Option<persistence::Writer>,
+    curated_dirty: bool,
+    original_dirty: bool,
     endpoint_keys: HashMap<ClientEndpointId, String>,
     host: crate::terminal_theme::TerminalTheme,
     surfaces: HashMap<String, HashMap<String, Rgb>>,
@@ -161,12 +172,26 @@ impl Colours {
             self.worlds = worlds;
         }
         self.writer = writer;
+        let (worlds, writer) = persistence::open_with_extension(path, "colours-curated-v1.json");
+        if self.curated_worlds.is_empty() {
+            self.curated_worlds = worlds;
+        }
+        self.curated_writer = writer;
         self.refresh_surfaces();
     }
     pub fn new(path: Option<&std::path::Path>) -> Self {
         let (worlds, writer) = persistence::open(path);
+        let (curated_worlds, curated_writer) =
+            persistence::open_with_extension(path, "colours-curated-v1.json");
         Self {
             worlds,
+            curated_worlds,
+            curated_writer,
+            curated_dirty: false,
+            original_dirty: false,
+            preview: None,
+            active_profile: None,
+            render_keys: HashMap::new(),
             endpoint_keys: HashMap::new(),
             host: Default::default(),
             surfaces: HashMap::new(),
@@ -184,11 +209,22 @@ impl Colours {
             .entry(endpoint.clone())
             .or_insert_with(|| key.clone());
         let world = self.worlds.entry(key.clone()).or_default();
-        if world.reconcile(snapshot) {
-            self.refresh_surfaces();
+        let changed = world.reconcile(snapshot);
+        self.original_dirty |= changed;
+        if self.original_dirty && self.preview.is_none() {
             if let Some(writer) = &self.writer {
                 writer.save(&self.worlds);
             }
+            self.original_dirty = false;
+        }
+        let new_endpoint = !self.render_keys.contains_key(endpoint);
+        self.render_keys.entry(endpoint.clone()).or_insert_with(|| {
+            self.active_profile
+                .map_or_else(|| key.clone(), |profile| format!("{profile}/{key}"))
+        });
+        let curated_changed = self.reconcile_curated(&key, snapshot);
+        if changed || curated_changed || new_endpoint {
+            self.refresh_surfaces();
         }
     }
     pub fn update_host(&mut self, event: &crate::raw_input::RawInputEvent) {
@@ -226,7 +262,12 @@ impl Colours {
         let bg = rgb(bg);
         let fg = rgb(fg);
         let l = bg.oklch()[0];
-        for (endpoint, world) in &self.worlds {
+        let mut surfaces: HashMap<String, HashMap<String, Rgb>> = HashMap::new();
+        for (endpoint, world) in self
+            .active_worlds()
+            .iter()
+            .filter(|(key, _)| self.render_keys.values().any(|v| v == *key))
+        {
             for (id, w) in &world.workspaces {
                 let hue = w.bank[w.parent].header.oklch()[2];
                 let mut surface = bg;
@@ -249,16 +290,17 @@ impl Colours {
                         break;
                     }
                 }
-                self.surfaces
+                surfaces
                     .entry(endpoint.clone())
                     .or_default()
                     .insert(id.clone(), surface);
             }
         }
+        self.surfaces = surfaces;
     }
     fn workspace(&self, endpoint: &ClientEndpointId, id: &str) -> Option<&Workspace> {
-        self.worlds
-            .get(self.endpoint_keys.get(endpoint)?)?
+        self.active_worlds()
+            .get(self.render_keys.get(endpoint)?)?
             .workspaces
             .get(id)
     }
@@ -269,7 +311,7 @@ impl Colours {
     ) -> Option<u32> {
         let id = snapshot.focused_workspace_id.as_ref()?;
         self.surfaces
-            .get(self.endpoint_keys.get(endpoint)?)?
+            .get(self.render_keys.get(endpoint)?)?
             .get(id)
             .map(|c| crate::protocol::color_to_u32(c.color()))
     }
@@ -341,28 +383,38 @@ impl Colours {
         let Some((background, active, tab_background)) = self.sidebar_theme else {
             return;
         };
-        let tone = (self.palette_mode == crate::config::WorkspaceColourPalette::Theme)
-            .then(|| {
-                self.source_palette
-                    .as_ref()
-                    .and_then(projection::ThemeTone::from_palette)
-            })
-            .flatten();
+        let tone = (self.palette_mode == crate::config::WorkspaceColourPalette::Theme
+            && self.active_profile.is_some())
+        .then(|| {
+            self.source_palette
+                .as_ref()
+                .and_then(projection::ThemeTone::from_palette)
+        })
+        .flatten();
         self.sidebar_styles.clear();
         self.tab_styles.clear();
-        for world in self.worlds.values() {
+        let mut sidebar_styles = HashMap::new();
+        let mut tab_styles = HashMap::new();
+        for world in self
+            .active_worlds()
+            .iter()
+            .filter(|(key, _)| self.render_keys.values().any(|v| v == *key))
+            .map(|(_, w)| w)
+        {
             for w in world.workspaces.values() {
                 for index in std::iter::once(w.parent).chain(w.tabs.iter().map(|t| t.colour)) {
                     let c = w.bank[index];
-                    self.sidebar_styles
+                    sidebar_styles
                         .entry(c.header)
                         .or_insert_with(|| chrome_style(c, background, active, false, tone));
-                    self.tab_styles
+                    tab_styles
                         .entry(c.header)
                         .or_insert_with(|| chrome_style(c, tab_background, active, true, tone));
                 }
             }
         }
+        self.sidebar_styles = sidebar_styles;
+        self.tab_styles = tab_styles;
     }
     pub fn workspace_style(&self, endpoint: &ClientEndpointId, id: &str) -> Option<SidebarStyle> {
         let w = self.workspace(endpoint, id)?;

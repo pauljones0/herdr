@@ -420,6 +420,11 @@ pub(super) struct ClientSettingsOverlay {
     pub(super) original_workspace_colours: bool,
     pub(super) original_workspace_colour_palette: crate::config::WorkspaceColourPalette,
     pub(super) original_palette: Palette,
+    pub(super) draft_theme_name: Option<String>,
+    pub(super) draft_workspace_colours: bool,
+    pub(super) draft_workspace_colour_palette: crate::config::WorkspaceColourPalette,
+    pub(super) palette_notice: String,
+    pub(super) preview_theme_name: String,
     pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,
     pub(super) integration_messages: Vec<String>,
     pub(super) loading_integrations: bool,
@@ -1570,6 +1575,18 @@ impl ClientShellState {
                 }
                 Some(_) => {}
             }
+        }
+        if self.snapshot.is_none() {
+            let (_, mut name) = crate::app::resolve_effective_theme(
+                &self.config.theme_runtime,
+                self.host_appearance,
+            );
+            if let Some(ClientShellOverlay::Settings(settings)) = &self.overlay {
+                if let Some(draft) = &settings.draft_theme_name {
+                    name = draft.clone();
+                }
+            }
+            self.update_curated_profile(&name);
         }
         if self.config.workspace_colours {
             self.colours.reconcile(&self.active_endpoint_id, &snapshot);

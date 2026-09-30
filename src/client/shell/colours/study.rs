@@ -8,16 +8,10 @@ fn workspace_colour_palette_study() {
         std::path::PathBuf::from(std::env::var("HERDR_COLOUR_STUDY_DIR").expect("study directory"));
     std::fs::create_dir_all(&directory).expect("study directory");
     let mut records = Vec::new();
-    for name in [
-        "catppuccin",
-        "nord",
-        "gruvbox",
-        "rose-pine",
-        "catppuccin-latte",
-        "vesper",
-        "dracula",
-        "tokyo-night",
-    ] {
+    for &name in crate::config::THEME_NAMES
+        .iter()
+        .filter(|&&name| name != "terminal")
+    {
         let palette = Palette::from_name(name).expect("built-in palette");
         let rgb = |c| {
             if let Color::Rgb(r, g, b) = c {
@@ -73,7 +67,7 @@ fn workspace_colour_palette_study() {
                         false,
                         tone,
                     );
-                    records.push(serde_json::json!({"base":name,"mode":format!("{mode:?}"),"family":profile.name,"seed":seed,"header":header.title.0,"tabs":tabs.iter().map(|s|s.detail.0).collect::<Vec<_>>(),"adjacent_de":gaps,"min_contrast":min_contrast}));
+                    records.push(serde_json::json!({"base":name,"curated":curated::families(name).is_some_and(|set| set.contains(&theme)),"mode":format!("{mode:?}"),"family":profile.name,"seed":seed,"header":header.title.0,"tabs":tabs.iter().map(|s|s.detail.0).collect::<Vec<_>>(),"adjacent_de":gaps,"min_contrast":min_contrast}));
                 }
             }
         }

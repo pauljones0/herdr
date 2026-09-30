@@ -5,7 +5,9 @@ use crossterm::event::{KeyCode, KeyModifiers};
 pub(super) const THEME_CHOICE_OFFSET: usize = 3;
 
 pub(super) fn normalized_theme_name(name: &str) -> String {
-    name.to_lowercase().replace([' ', '_'], "-")
+    crate::config::canonical_theme_name(name)
+        .map(str::to_owned)
+        .unwrap_or_else(|| name.to_lowercase().replace([' ', '_'], "-"))
 }
 
 fn theme_index(name: &str) -> usize {
@@ -37,6 +39,9 @@ pub(super) fn integration_needs_install(info: &crate::api::schema::IntegrationIn
 
 impl ClientShellState {
     pub(super) fn open_settings_overlay(&mut self) {
+        self.colours
+            .enable_persistence(self.config.preferences_path.as_deref());
+        self.colours.begin_preview();
         self.overlay = Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
             section: ClientSettingsSection::Theme,
             selected: theme_index(&self.config.theme_name),
@@ -44,16 +49,31 @@ impl ClientShellState {
             original_workspace_colours: self.config.workspace_colours,
             original_workspace_colour_palette: self.config.workspace_colour_palette,
             original_palette: self.config.palette.clone(),
+            draft_theme_name: None,
+            draft_workspace_colours: self.config.workspace_colours,
+            draft_workspace_colour_palette: self.config.workspace_colour_palette,
+            palette_notice: String::new(),
+            preview_theme_name: String::new(),
             integrations: Vec::new(),
             integration_messages: Vec::new(),
             loading_integrations: false,
             installing_integrations: false,
         }));
+        self.refresh_theme_presentation();
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.selected = theme_index(&settings.preview_theme_name);
+        }
     }
 
     fn selected_index_for_settings_section(&self, section: ClientSettingsSection) -> usize {
         match section {
-            ClientSettingsSection::Theme => theme_index(&self.config.theme_name),
+            ClientSettingsSection::Theme => {
+                let name = match &self.overlay {
+                    Some(ClientShellOverlay::Settings(settings)) => &settings.preview_theme_name,
+                    _ => &self.config.theme_name,
+                };
+                theme_index(name)
+            }
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
@@ -122,8 +142,17 @@ impl ClientShellState {
             settings.selected = 0;
             return;
         }
-        settings.selected = (settings.selected as isize + delta)
-            .clamp(0, count.saturating_sub(1) as isize) as usize;
+        let (first, last) = if settings.section == ClientSettingsSection::Theme {
+            if settings.selected < THEME_CHOICE_OFFSET {
+                (0, THEME_CHOICE_OFFSET - 1)
+            } else {
+                (THEME_CHOICE_OFFSET, count - 1)
+            }
+        } else {
+            (0, count - 1)
+        };
+        settings.selected =
+            (settings.selected as isize + delta).clamp(first as isize, last as isize) as usize;
         if settings.section == ClientSettingsSection::Theme {
             self.preview_selected_theme();
         }
@@ -148,20 +177,81 @@ impl ClientShellState {
     }
 
     fn preview_selected_theme(&mut self) {
-        let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_ref() else {
+        let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() else {
             return;
         };
-        let Some(index) = settings.selected.checked_sub(THEME_CHOICE_OFFSET) else {
-            self.config.theme_name = settings.original_theme_name.clone();
-            self.config.palette = settings.original_palette.clone();
-            return;
-        };
-        let Some(name) = crate::config::THEME_NAMES.get(index) else {
-            return;
-        };
-        self.config.theme_name = (*name).to_owned();
-        self.config.palette =
-            crate::app::client_palette_for_theme(&self.config.theme_runtime, name);
+        if let Some(index) = settings.selected.checked_sub(THEME_CHOICE_OFFSET) {
+            if let Some(name) = crate::config::THEME_NAMES.get(index) {
+                settings.draft_theme_name = Some((*name).to_owned());
+            }
+        } else {
+            settings.draft_workspace_colours = settings.selected != 0;
+            if settings.selected != 0 {
+                settings.draft_workspace_colour_palette = if settings.selected == 1 {
+                    crate::config::WorkspaceColourPalette::Theme
+                } else {
+                    crate::config::WorkspaceColourPalette::Mixed
+                };
+            }
+        }
+        self.refresh_theme_presentation();
+    }
+
+    // Event-time resolution shared by settings, config reload, and host appearance.
+    // Never infer an automatic light/dark profile from the saved manual name.
+    pub(super) fn refresh_theme_presentation(&mut self) {
+        let (mut palette, mut name) =
+            crate::app::resolve_effective_theme(&self.config.theme_runtime, self.host_appearance);
+        self.config.theme_name = self.config.theme_runtime.manual_name.clone();
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_ref() {
+            if let Some(draft) = &settings.draft_theme_name {
+                name = draft.clone();
+                palette = crate::app::client_palette_for_theme(&self.config.theme_runtime, draft);
+                self.config.theme_name = draft.clone();
+            }
+            self.config.workspace_colours = settings.draft_workspace_colours;
+            self.config.workspace_colour_palette = settings.draft_workspace_colour_palette;
+        }
+        self.config.palette = palette;
+        self.update_curated_profile(&name);
+    }
+
+    pub(super) fn update_curated_profile(&mut self, name: &str) {
+        let canonical = crate::config::canonical_theme_name(name);
+        let profile = canonical.filter(|name| {
+            colours::curated_families(name).is_some()
+                && Palette::from_name(name).as_ref() == Some(&self.config.palette)
+        });
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.preview_theme_name = name.to_owned();
+            settings.palette_notice = if !settings.draft_workspace_colours {
+                "Standard Herdr styling.".into()
+            } else if settings.draft_workspace_colour_palette
+                == crate::config::WorkspaceColourPalette::Mixed
+            {
+                "Full catalogue; related colours within each workspace.".into()
+            } else if profile.is_some() {
+                "Curated families; changing theme may change workspace colours.".into()
+            } else {
+                "Uncurated custom/terminal theme: using Original palettes.".into()
+            };
+        }
+        let adapted = self.config.workspace_colours
+            && self.config.workspace_colour_palette == crate::config::WorkspaceColourPalette::Theme;
+        self.colours
+            .select_profile(if adapted { profile } else { None });
+        if self.config.workspace_colours {
+            if let Some(snapshot) = self.snapshot.as_deref() {
+                self.colours.reconcile(&self.active_endpoint_id, snapshot);
+            }
+            for endpoint in &self.endpoints {
+                if endpoint.endpoint_id != self.active_endpoint_id {
+                    if let Some(snapshot) = endpoint.snapshot.as_deref() {
+                        self.colours.reconcile(&endpoint.endpoint_id, snapshot);
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn cancel_settings_overlay(&mut self) {
@@ -170,6 +260,10 @@ impl ClientShellState {
         };
         self.config.theme_name = settings.original_theme_name;
         self.config.palette = settings.original_palette;
+        self.config.workspace_colours = settings.original_workspace_colours;
+        self.config.workspace_colour_palette = settings.original_workspace_colour_palette;
+        self.colours.finish_preview(false);
+        self.refresh_theme_presentation();
     }
 
     fn save_settings_edit(
@@ -202,27 +296,16 @@ impl ClientShellState {
         let selected = settings.selected;
         match section {
             ClientSettingsSection::Theme => {
-                let edit = if selected < THEME_CHOICE_OFFSET {
-                    match selected {
-                        0 => crate::config::ConfigEdit::WorkspaceColours(false),
-                        1 => crate::config::ConfigEdit::WorkspaceColourPalette(
-                            crate::config::WorkspaceColourPalette::Theme,
-                        ),
-                        _ => crate::config::ConfigEdit::WorkspaceColourPalette(
-                            crate::config::WorkspaceColourPalette::Mixed,
-                        ),
-                    }
-                } else {
-                    let Some(name) = crate::config::THEME_NAMES
-                        .get(selected - THEME_CHOICE_OFFSET)
-                        .copied()
-                    else {
-                        return;
-                    };
-                    crate::config::ConfigEdit::Theme(name)
+                let theme = settings.draft_theme_name.clone();
+                let edit = crate::config::ConfigEdit::Appearance {
+                    theme: theme.as_deref(),
+                    enabled: settings.draft_workspace_colours,
+                    palette: settings.draft_workspace_colour_palette,
                 };
                 if self.save_settings_edit(edit, outcome) {
+                    self.colours.finish_preview(true);
                     self.overlay = None;
+                    self.refresh_theme_presentation();
                 }
             }
             ClientSettingsSection::Indicators => {
@@ -397,6 +480,27 @@ impl ClientShellState {
                 outcome.repaint = true;
             }
             return true;
+        }
+        if matches!(code, KeyCode::Tab | KeyCode::BackTab)
+            && modifiers.difference(KeyModifiers::SHIFT).is_empty()
+        {
+            if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                if settings.section == ClientSettingsSection::Theme {
+                    settings.selected = if settings.selected < THEME_CHOICE_OFFSET {
+                        theme_index(&settings.preview_theme_name)
+                    } else if !settings.draft_workspace_colours {
+                        0
+                    } else if settings.draft_workspace_colour_palette
+                        == crate::config::WorkspaceColourPalette::Theme
+                    {
+                        1
+                    } else {
+                        2
+                    };
+                    outcome.repaint = true;
+                    return true;
+                }
+            }
         }
         if matches!(code, KeyCode::Tab | KeyCode::Right | KeyCode::Char('l'))
             && modifiers.is_empty()

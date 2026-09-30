@@ -1,6 +1,11 @@
 #[derive(Clone, Copy)]
 pub(crate) enum ConfigEdit<'a> {
     Theme(&'a str),
+    Appearance {
+        theme: Option<&'a str>,
+        enabled: bool,
+        palette: super::WorkspaceColourPalette,
+    },
     WorkspaceColours(bool),
     WorkspaceColourPalette(super::WorkspaceColourPalette),
     StatusIndicators(super::StatusIndicatorStyle),
@@ -11,7 +16,7 @@ pub(crate) enum ConfigEdit<'a> {
 impl ConfigEdit<'_> {
     pub(crate) fn description(self) -> &'static str {
         match self {
-            Self::Theme(_) => "theme",
+            Self::Theme(_) | Self::Appearance { .. } => "theme",
             Self::WorkspaceColours(_) | Self::WorkspaceColourPalette(_) => "workspace colours",
             Self::StatusIndicators(_) => "status indicators",
             Self::Sound(_) => "sound setting",
@@ -21,6 +26,15 @@ impl ConfigEdit<'_> {
 
     pub(crate) fn apply(self, content: &str) -> String {
         match self {
+            Self::Appearance {
+                theme,
+                enabled,
+                palette,
+            } => {
+                let content = Self::WorkspaceColourPalette(palette).apply(content);
+                let content = Self::WorkspaceColours(enabled).apply(&content);
+                theme.map_or(content.clone(), |name| Self::Theme(name).apply(&content))
+            }
             Self::WorkspaceColourPalette(mode) => {
                 let value = match mode {
                     super::WorkspaceColourPalette::Theme => "\"theme\"",
@@ -96,6 +110,28 @@ pub(crate) fn write_edit(edit: ConfigEdit<'_>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appearance_edit_saves_both_and_preserves_automatic_mode_unless_base_selected() {
+        let original = "# keep\n[theme]\nname = \"nord\"\nauto_switch = true\n[theme.custom]\naccent = \"#123456\"\n";
+        for theme in [None, Some("dracula")] {
+            let written = ConfigEdit::Appearance {
+                theme,
+                enabled: true,
+                palette: super::super::WorkspaceColourPalette::Theme,
+            }
+            .apply(original);
+            let config: super::super::Config = toml::from_str(&written).expect("config");
+            assert_eq!(config.theme.name.as_deref(), Some(theme.unwrap_or("nord")));
+            assert_eq!(config.theme.auto_switch, theme.is_none());
+            assert!(config.theme.workspace_colours);
+            assert_eq!(
+                config.theme.workspace_colour_palette,
+                super::super::WorkspaceColourPalette::Theme
+            );
+            assert!(written.contains("# keep") && written.contains("#123456"));
+        }
+    }
 
     #[test]
     fn workspace_colours_edit_preserves_theme_and_other_settings() {

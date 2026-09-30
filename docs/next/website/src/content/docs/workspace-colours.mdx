@@ -3,27 +3,65 @@ title: Workspace colour families
 description: Generated workspace themes with coordinated local tabs in this custom build.
 ---
 
-Enable generated workspace colours in **Settings → theme**: select
-**workspace colours: mixed palettes** or **workspace colours: follow theme**, then
-**apply**. Select **workspace colours: off** and
-apply to restore ordinary styling. Selecting a choice and closing without applying
-leaves the option unchanged. The base-theme picker remains in the same tab.
+Open **Settings → theme** and choose a **base theme** and **workspace colours**:
 
-Alternatively, set the option in your config:
+- **Off** uses standard Herdr styling.
+- **Theme-adapted** chooses workspace families from a curated subset for the displayed base theme, with label tones adjusted for that theme.
+- **Original palettes** uses the full catalogue and its original styling.
+
+Both enabled modes give tabs related colours within their workspace. Click either
+control, or use **Tab** to switch controls and **Up/Down** to preview a choice.
+**Left/Right** switches settings sections. Checkmarks show the two pending choices;
+the highlight shows keyboard focus. **Apply** saves both choices together and
+closes. **Cancel**, **Escape**, or clicking outside discards both pending choices.
+Changing the base theme explicitly selects manual mode, as in the original picker;
+changing only workspace colours preserves automatic light/dark switching.
+
+Theme-adapted preserves compatible assignments on a theme's first visit and chooses
+replacements predictably for incompatible families. Returning to a visited theme
+restores that theme's assignments. Original assignments stay separate. Workspaces
+and tabs added or removed while settings is open still follow the live session.
+When a set has fewer families than workspaces, families repeat with generated
+variations; colours are a navigation aid, not a unique identifier.
+
+Automatic light/dark switching uses the set for the theme actually displayed.
+Each dark/light theme remembers its own assignments. The built-in `terminal` theme
+and palettes changed by custom colour overrides have not been curated: they use
+**Original palettes** as a fallback, which the settings dialog explains. A light
+Herdr theme changes interface colours; terminal applications keep their own text
+colours and explicit backgrounds.
+
+Existing configuration values remain compatible:
 
 ```toml
 [theme]
 workspace_colours = true
-workspace_colour_palette = "mixed" # or "theme"
+workspace_colour_palette = "theme" # Theme-adapted; "mixed" means Original palettes
 ```
 
-**Mixed palettes** retains the original family styling. **Follow theme** adapts
-label brightness and saturation to the resolved base theme, including custom RGB
-palette overrides, while preserving workspace and tab hues. It borrows tonal
-character rather than copying a theme's exact accent colours. The ANSI `terminal`
-theme keeps the mixed styling when no fixed RGB palette is available. Switching
-modes does not regenerate saved assignments. Existing enabled configurations keep
-Mixed palettes unless you explicitly change modes.
+Existing enabled configurations without a palette setting keep Original palettes.
+Original assignments use the existing client-local checkpoint. Curated assignments
+use a separate versioned checkpoint; cancelled previews do not save new assignments.
+
+## Curated sets
+
+These subsets were reviewed in the native client with eight workspaces and eight
+tabs per workspace, including dark and light variants. Label contrast was checked
+against normal and active surfaces. Curation targets visual harmony and useful
+separation; it cannot make every generated shade uniquely distinguishable.
+
+| Base theme | Available families |
+| --- | --- |
+| Catppuccin / Latte | Pastel / kawaii, Lavender, Rose Quartz, Peppermint, Glacier, Peach Sorbet |
+| Tokyo Night / Day | Blue Hour, Cosmic, Lagoon, Wild Berry, Jade Garden, Peach Sorbet |
+| Dracula | Cosmic, Wild Berry, Peppermint, Lagoon, Ember, Citrus |
+| Nord | Glacier, Moonstone, Lavender, Forest, Rose Quartz, Peach Sorbet |
+| Gruvbox / Light | Forest, Citrus, Ember, Peach Sorbet, Lagoon, Pomegranate |
+| One Dark / Light | Ocean, Lavender, Forest, Peach Sorbet, Sakura, Lagoon |
+| Solarized / Light | Ocean, Lagoon, Citrus, Ember, Wild Berry, Blue Hour |
+| Kanagawa / Lotus | Blue Hour, Dusk, Forest, Lagoon, Peach Sorbet, Sakura |
+| Rosé Pine / Dawn | Lavender, Rose Quartz, Ocean, Glacier, Peach Sorbet, Dusk |
+| Vesper | Peach Sorbet, Peppermint, Lagoon, Moonstone, Sakura, Forest |
 
 Family styles supply defaults to Herdr's existing sidebar token renderer. Explicit
 token foreground/bold/dim settings, status colours, and navigation/drag highlights
